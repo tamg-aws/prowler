@@ -200,6 +200,34 @@
       ]
     },
     {
+      "Id": "AISF-INFRA-10",
+      "Description": "Ensure compute capacity backing model inference and agent sessions is isolated per workload or tenant through provisioned throughput or per-session limits, so one workload cannot exhaust capacity another depends on.",
+      "Name": "Inference Capacity Isolation",
+      "Attributes": [
+        {
+          "Section": "Infrastructure Security",
+          "SubSection": "Compute Isolation",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-INFRA-11",
+      "Description": "Ensure container images used for self-hosted AI and agent workloads are scanned for known vulnerabilities before deployment, with findings above an agreed severity blocking release.",
+      "Name": "Container Image Vulnerability Management for AI Workloads",
+      "Attributes": [
+        {
+          "Section": "Infrastructure Security",
+          "SubSection": "Container Runtime Security",
+          "Service": "ecr",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
       "Id": "AISF-IAM-01",
       "Description": "Ensure MFA is enforced for all users accessing AI services, including root account hardware MFA, IAM user MFA for console access, and Cognito user pool MFA for AI application end users.",
       "Name": "Multi-Factor Authentication for AI Access",
@@ -678,6 +706,48 @@
       "Checks": []
     },
     {
+      "Id": "AISF-AI-12",
+      "Description": "Ensure vector embeddings derived from source documents inherit the classification and access controls of that source, since embedding inversion can reconstruct source text from vectors alone.",
+      "Name": "RAG Embedding Data Governance",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "RAG Security",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AI-13",
+      "Description": "Ensure the number of retrieved chunks and the retrieval strategy are bounded server-side per request, so poisoned or low-relevance content cannot crowd legitimate context out of the model's window.",
+      "Name": "RAG Retrieval Bounding",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "RAG Security",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AI-14",
+      "Description": "Ensure knowledge base indexes are monitored for unexpected change in document count, chunk count, or embedding distribution, so corpus poisoning or a failed ingestion is detected rather than silently served.",
+      "Name": "Knowledge Base Corpus Integrity Monitoring",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "RAG Security",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
       "Id": "AISF-AGENT-01",
       "Description": "Ensure every AI agent has its own identity with scoped credentials and independent authorization per request, following zero-trust principles. Agent identities must be separate from human user identities.",
       "Name": "Agent Identity and Authentication",
@@ -739,6 +809,20 @@
       "Id": "AISF-AGENT-05",
       "Description": "Ensure human-in-the-loop approval is required for high-consequence agent actions such as financial transactions, data deletion, or privilege changes.",
       "Name": "Human Approval for Critical Agent Actions",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Agent Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AGENT-06",
+      "Description": "Ensure evaluator definitions bound to a running production evaluation are change-managed, so an evaluator in active use is cloned rather than edited in place and evaluation results stay comparable over time.",
+      "Name": "Agent Evaluator Change Management",
       "Attributes": [
         {
           "Section": "AI Application Security",
@@ -1113,6 +1197,34 @@
       "Checks": []
     },
     {
+      "Id": "AISF-GOV-08",
+      "Description": "Ensure AI service cost and usage are attributable to the team, workload, and environment that created them through activated cost-allocation tags, and that anomalies are alerted on to catch runaway spend or misuse.",
+      "Name": "AI Cost and Usage Anomaly Detection",
+      "Attributes": [
+        {
+          "Section": "Governance and Compliance",
+          "SubSection": "AI Governance",
+          "Service": "multiple",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-GOV-09",
+      "Description": "Ensure the security services monitoring AI workloads are administered from a dedicated security-tooling account designated as delegated administrator, rather than from the organization management account.",
+      "Name": "Delegated Administration for AI Security Services",
+      "Attributes": [
+        {
+          "Section": "Governance and Compliance",
+          "SubSection": "Account Governance",
+          "Service": "organizations",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
       "Id": "AISF-RUNTIME-01",
       "Description": "Ensure EKS clusters used for AI agent runtimes are properly secured with private endpoints, network policies, supported versions, control plane logging, and secrets encryption.",
       "Name": "EKS Security for AI Runtimes",
@@ -1199,6 +1311,20 @@
       "Id": "AISF-MODEL-02",
       "Description": "Ensure model selection is appropriate for the use case with CISO involvement in evaluation. Customer-facing agents require different model security profiles than internal summarization tools.",
       "Name": "Model Selection Governance",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Model Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-MODEL-03",
+      "Description": "Ensure models fine-tuned or continued-pretrained on private data are assessed for verbatim memorization of that data before serving production traffic, since output filtering is a backstop rather than a control.",
+      "Name": "Training Data Memorization Assessment",
       "Attributes": [
         {
           "Section": "AI Application Security",
