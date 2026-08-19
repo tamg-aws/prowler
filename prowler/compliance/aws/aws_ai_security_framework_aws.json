@@ -228,6 +228,48 @@
       "Checks": []
     },
     {
+      "Id": "AISF-INFRA-12",
+      "Description": "Ensure Bedrock AgentCore gateways are protected against volumetric abuse and malicious requests with rate limiting and a web application firewall, given they present a public-facing endpoint.",
+      "Name": "Gateway Rate Limiting and WAF",
+      "Attributes": [
+        {
+          "Section": "Infrastructure Security",
+          "SubSection": "Web Application Firewall",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-INFRA-13",
+      "Description": "Ensure invocation of a Bedrock AgentCore runtime is restricted to both an approved network path and an approved caller, so that neither the public internet nor a direct call bypassing the gateway can reach it.",
+      "Name": "Agent Runtime Invocation Restriction",
+      "Attributes": [
+        {
+          "Section": "Infrastructure Security",
+          "SubSection": "Network Isolation",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-INFRA-14",
+      "Description": "Ensure the Bedrock AgentCore Policy Engine is encrypted with an organization-controlled KMS key and that the operational failure modes of that key are understood and guarded.",
+      "Name": "Policy Engine Key Management",
+      "Attributes": [
+        {
+          "Section": "Infrastructure Security",
+          "SubSection": "Encryption at Rest",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
       "Id": "AISF-IAM-01",
       "Description": "Ensure MFA is enforced for all users accessing AI services, including root account hardware MFA, IAM user MFA for console access, and Cognito user pool MFA for AI application end users.",
       "Name": "Multi-Factor Authentication for AI Access",
@@ -532,6 +574,34 @@
       ]
     },
     {
+      "Id": "AISF-DATA-07",
+      "Description": "Ensure Bedrock AgentCore evaluation results are treated as sensitive data: encrypted with organization-controlled keys, retained to a compliance schedule, and free of personally identifiable information in prompts and traces.",
+      "Name": "Evaluation Result Data Protection",
+      "Attributes": [
+        {
+          "Section": "Identity and Data Security",
+          "SubSection": "Data Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-DATA-08",
+      "Description": "Ensure the Amazon Bedrock data-retention mode is explicitly set and pinned organization-wide, so that no account or project can opt into sharing prompts and outputs with the model provider.",
+      "Name": "Bedrock Data Retention Pinning",
+      "Attributes": [
+        {
+          "Section": "Identity and Data Security",
+          "SubSection": "Data Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
       "Id": "AISF-AI-01",
       "Description": "Ensure Amazon Bedrock has at least one guardrail configured to provide content filtering, prompt injection defense, PII filtering, and topic restrictions for foundation model interactions.",
       "Name": "Bedrock Guardrails Configuration",
@@ -748,6 +818,48 @@
       "Checks": []
     },
     {
+      "Id": "AISF-AI-15",
+      "Description": "Ensure documents ingested into a Bedrock knowledge base are screened for malicious instructions embedded in their content, preventing indirect prompt injection through retrieved context.",
+      "Name": "Knowledge Base Ingestion Screening",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "RAG Security",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AI-16",
+      "Description": "Ensure personally identifiable and protected health information is redacted or masked from knowledge base content before it can be retrieved and passed to a model.",
+      "Name": "Knowledge Base Content Redaction",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "RAG Security",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AI-17",
+      "Description": "Ensure production prompts that drive model behavior are managed as controlled, versioned artifacts in a central catalog rather than hardcoded ad hoc in application code.",
+      "Name": "Prompt Version Control",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Prompt Management",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
       "Id": "AISF-AGENT-01",
       "Description": "Ensure every AI agent has its own identity with scoped credentials and independent authorization per request, following zero-trust principles. Agent identities must be separate from human user identities.",
       "Name": "Agent Identity and Authentication",
@@ -823,6 +935,76 @@
       "Id": "AISF-AGENT-06",
       "Description": "Ensure evaluator definitions bound to a running production evaluation are change-managed, so an evaluator in active use is cloned rather than edited in place and evaluation results stay comparable over time.",
       "Name": "Agent Evaluator Change Management",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Agent Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AGENT-07",
+      "Description": "Ensure Bedrock AgentCore gateways enforce their own inbound authentication and authorization on every tool and API they expose, independently of what the calling model requests.",
+      "Name": "Gateway Inbound Authorization",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Agent Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AGENT-08",
+      "Description": "Ensure Bedrock AgentCore gateway resource-based policies and target execution-role trust policies prevent confused-deputy access when an AWS service or another account is permitted to invoke the gateway.",
+      "Name": "Gateway Confused Deputy Prevention",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Agent Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AGENT-09",
+      "Description": "Ensure agent-to-tool authorization decisions are made by a deterministic default-deny policy engine outside the agent's own reasoning, rather than relying on the model to respect instructions.",
+      "Name": "Deterministic Tool Authorization",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Agent Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AGENT-10",
+      "Description": "Ensure risks visible only across a sequence of agent actions, such as an unverified payee, a skipped prerequisite, a reused approval or a cumulative overspend, are constrained by policy rather than evaluated one call at a time.",
+      "Name": "Multi-Step Agent Risk Constraints",
+      "Attributes": [
+        {
+          "Section": "AI Application Security",
+          "SubSection": "Agent Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-AGENT-11",
+      "Description": "Ensure Bedrock AgentCore registry entries require curator approval before becoming discoverable, and that the approval action is restricted to curators and its events monitored.",
+      "Name": "Agent Registry Approval Control",
       "Attributes": [
         {
           "Section": "AI Application Security",
@@ -1219,6 +1401,48 @@
           "Section": "Governance and Compliance",
           "SubSection": "Account Governance",
           "Service": "organizations",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-GOV-10",
+      "Description": "Ensure a continuous evaluation runs against production agent traffic at a defined sampling rate, so quality and safety regressions are detected in production rather than only pre-release.",
+      "Name": "Continuous Production Evaluation",
+      "Attributes": [
+        {
+          "Section": "Governance and Compliance",
+          "SubSection": "AI Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-GOV-11",
+      "Description": "Ensure safety- and security-relevant evaluators, such as harmful output and unauthorized tool selection, are enabled and alerted on rather than only quality-of-answer scores.",
+      "Name": "Safety Evaluator Coverage",
+      "Attributes": [
+        {
+          "Section": "Governance and Compliance",
+          "SubSection": "AI Governance",
+          "Service": "bedrock",
+          "Type": "Manual"
+        }
+      ],
+      "Checks": []
+    },
+    {
+      "Id": "AISF-GOV-12",
+      "Description": "Ensure agent authorization policies are validated and formally analyzed before deployment, so that an overly permissive, contradictory or unsatisfiable rule cannot reach production.",
+      "Name": "Policy Pre-Deployment Validation",
+      "Attributes": [
+        {
+          "Section": "Governance and Compliance",
+          "SubSection": "Automated Governance",
+          "Service": "bedrock",
           "Type": "Manual"
         }
       ],
