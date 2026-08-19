@@ -224,3 +224,86 @@ class Test_WAFv2_Service:
         assert len(wafv2.web_acls[waf_arn].rules) == 1
         assert wafv2.web_acls[waf_arn].rules[0].name == "rule-on"
         assert wafv2.web_acls[waf_arn].rules[0].cloudwatch_metrics_enabled
+
+    @mock_aws
+    def test_get_web_acl_rule_actions(self):
+        wafv2 = client("wafv2", region_name=AWS_REGION_EU_WEST_1)
+        visibility = {
+            "SampledRequestsEnabled": True,
+            "CloudWatchMetricsEnabled": True,
+            "MetricName": "web-acl-test-metric",
+        }
+        waf = wafv2.create_web_acl(
+            Scope="REGIONAL",
+            Name="my-web-acl",
+            DefaultAction={"Block": {}},
+            Rules=[
+                {
+                    "Name": "count-rule",
+                    "Priority": 1,
+                    "Statement": {
+                        "ByteMatchStatement": {
+                            "SearchString": "test",
+                            "FieldToMatch": {"UriPath": {}},
+                            "TextTransformations": [{"Type": "NONE", "Priority": 0}],
+                            "PositionalConstraint": "CONTAINS",
+                        }
+                    },
+                    "Action": {"Count": {}},
+                    "VisibilityConfig": visibility,
+                },
+                {
+                    "Name": "block-rule",
+                    "Priority": 2,
+                    "Statement": {
+                        "ByteMatchStatement": {
+                            "SearchString": "test",
+                            "FieldToMatch": {"UriPath": {}},
+                            "TextTransformations": [{"Type": "NONE", "Priority": 0}],
+                            "PositionalConstraint": "CONTAINS",
+                        }
+                    },
+                    "Action": {"Block": {}},
+                    "VisibilityConfig": visibility,
+                },
+                {
+                    "Name": "overridden-rule-group",
+                    "Priority": 3,
+                    "Statement": {
+                        "ManagedRuleGroupStatement": {
+                            "VendorName": "AWS",
+                            "Name": "AWSManagedRulesCommonRuleSet",
+                        }
+                    },
+                    "OverrideAction": {"Count": {}},
+                    "VisibilityConfig": visibility,
+                },
+            ],
+            VisibilityConfig={
+                "SampledRequestsEnabled": False,
+                "CloudWatchMetricsEnabled": False,
+                "MetricName": "idk",
+            },
+        )["Summary"]
+
+        waf_arn = waf["ARN"]
+        aws = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+        wafv2 = WAFv2(aws)
+
+        web_acl = wafv2.web_acls[waf_arn]
+        assert web_acl.default_action_block
+        # A ManagedRuleGroupStatement carries no RuleGroupReferenceStatement ARN, so it is bucketed
+        # into rules rather than rule_groups.
+        assert len(web_acl.rules) == 3
+        rules = {rule.name: rule for rule in web_acl.rules}
+
+        assert rules["count-rule"].action == "Count"
+        assert not rules["count-rule"].override_action_count
+        assert not rules["count-rule"].is_enforcing
+
+        assert rules["block-rule"].action == "Block"
+        assert rules["block-rule"].is_enforcing
+
+        assert rules["overridden-rule-group"].action is None
+        assert rules["overridden-rule-group"].override_action_count
+        assert not rules["overridden-rule-group"].is_enforcing

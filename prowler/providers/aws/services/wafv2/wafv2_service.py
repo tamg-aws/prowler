@@ -131,6 +131,13 @@ class WAFv2(AWSService):
                 )
 
                 try:
+                    acl.default_action_block = bool(
+                        get_web_acl.get("WebACL", {})
+                        .get("DefaultAction", {})
+                        .get("Block")
+                        is not None
+                    )
+
                     rules = get_web_acl.get("WebACL", {}).get("Rules", [])
                     for rule in rules:
                         new_rule = Rule(
@@ -138,6 +145,14 @@ class WAFv2(AWSService):
                             cloudwatch_metrics_enabled=rule.get(
                                 "VisibilityConfig", {}
                             ).get("CloudWatchMetricsEnabled", False),
+                            action=next(
+                                iter(rule.get("Action", {}) or {}),
+                                None,
+                            ),
+                            override_action_count=rule.get("OverrideAction", {}).get(
+                                "Count"
+                            )
+                            is not None,
                         )
                         if (
                             rule.get("Statement", {})
@@ -161,6 +176,10 @@ class WAFv2(AWSService):
                                 cloudwatch_metrics_enabled=rule.get(
                                     "VisibilityConfig", {}
                                 ).get("CloudWatchMetricsEnabled", False),
+                                override_action_count=rule.get(
+                                    "OverrideAction", {}
+                                ).get("Count")
+                                is not None,
                             )
                         )
 
@@ -205,6 +224,20 @@ class Rule(BaseModel):
 
     name: str
     cloudwatch_metrics_enabled: bool = False
+    # Key of the rule's Action struct: Block, Allow, Count, Captcha or Challenge. The WAFv2 API
+    # allows Action only on rules that do not reference a rule group, so this is None for rule
+    # group references, whose effective action is governed by OverrideAction instead.
+    action: Optional[str] = None
+    # OverrideAction.Count overrides the whole referenced rule group to count-only, so the group
+    # inspects requests but never blocks them.
+    override_action_count: bool = False
+
+    @property
+    def is_enforcing(self) -> bool:
+        """Whether a request matching this rule can be blocked, challenged or CAPTCHA'd."""
+        if self.override_action_count:
+            return False
+        return self.action in (None, "Block", "Captcha", "Challenge")
 
 
 class WebAclv2(BaseModel):
@@ -221,3 +254,4 @@ class WebAclv2(BaseModel):
     scope: Scope = Scope.REGIONAL
     rules: list[Rule] = []
     rule_groups: list[Rule] = []
+    default_action_block: bool = False

@@ -1,0 +1,40 @@
+{
+  "Provider": "aws",
+  "CheckID": "wafv2_webacl_rules_not_count_only",
+  "CheckTitle": "AWS WAFv2 Web ACL does not evaluate every rule in count-only mode",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices"
+  ],
+  "ServiceName": "wafv2",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "AwsWafv2WebAcl",
+  "ResourceGroup": "security",
+  "Description": "**AWS WAFv2 web ACLs** that have rules are evaluated for at least one rule or rule group able to take a **blocking action**. A rule set to `Count`, or a rule group overridden with `OverrideAction: Count`, inspects requests and then lets them through.",
+  "Risk": "A web ACL whose every rule only counts matches inspects traffic but blocks nothing, so it reports attacks while still serving them. This leaves **confidentiality** (injection, data exfiltration), **integrity** (XSS, parameter tampering) and **availability** (layer-7 flooding, bot abuse) exposed behind a WAF that appears deployed.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/waf/latest/developerguide/web-acl-rule-group-override-options.html",
+    "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-action.html",
+    "https://repost.aws/knowledge-center/waf-analyze-count-action-rules"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "```yaml\n# CloudFormation: let the rule group block instead of only counting matches\nResources:\n  <example_resource_name>:\n    Type: AWS::WAFv2::WebACL\n    Properties:\n      Scope: REGIONAL\n      DefaultAction:\n        Allow: {}\n      VisibilityConfig:\n        SampledRequestsEnabled: true\n        CloudWatchMetricsEnabled: true\n        MetricName: <example_resource_name>\n      Rules:\n        - Name: <example_rule_name>\n          Priority: 0\n          Statement:\n            ManagedRuleGroupStatement:\n              VendorName: AWS\n              Name: AWSManagedRulesCommonRuleSet\n          OverrideAction:\n            None: {}  # CRITICAL: 'None' keeps the rule group's own Block actions; 'Count' disables them\n          VisibilityConfig:\n            SampledRequestsEnabled: true\n            CloudWatchMetricsEnabled: true\n            MetricName: <example_rule_name>\n```",
+      "Other": "1. In the AWS Console, go to AWS WAF and open Web ACLs\n2. Select the failing Web ACL and open the Rules tab\n3. For each managed or custom rule group, clear Override rule group action to Count\n4. For each standalone rule whose action is Count, change the action to Block\n5. Save the Web ACL\n6. Confirm in CloudWatch that BlockedRequests is non-zero for the tuned rules",
+      "Terraform": "```hcl\n# Terraform: keep the rule group's blocking actions rather than overriding to count\nresource \"aws_wafv2_web_acl\" \"<example_resource_name>\" {\n  name  = \"<example_resource_name>\"\n  scope = \"REGIONAL\"\n\n  default_action {\n    allow {}\n  }\n\n  visibility_config {\n    cloudwatch_metrics_enabled = true\n    metric_name                = \"<example_resource_name>\"\n    sampled_requests_enabled   = true\n  }\n\n  rule {\n    name     = \"<example_rule_name>\"\n    priority = 0\n    statement {\n      managed_rule_group_statement {\n        name        = \"AWSManagedRulesCommonRuleSet\"\n        vendor_name = \"AWS\"\n      }\n    }\n    override_action { none {} } # CRITICAL: 'none' preserves Block; 'count' makes the group inert\n    visibility_config {\n      cloudwatch_metrics_enabled = true\n      metric_name                = \"<example_rule_name>\"\n      sampled_requests_enabled   = true\n    }\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Use count mode only while tuning a new rule or rule group against live traffic, then promote it to a blocking action. Keep at least one rule able to block, challenge or CAPTCHA requests, or set the web ACL DefaultAction to Block and allow-list known-good traffic.",
+      "Url": "https://hub.prowler.com/check/wafv2_webacl_rules_not_count_only"
+    }
+  },
+  "Categories": [
+    "internet-exposed"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "Scoped to web ACLs that already have rules; empty web ACLs are reported by wafv2_webacl_with_rules. Per-rule RuleActionOverrides inside a managed rule group are not evaluated, because confirming that every rule in the group was overridden to Count would require DescribeManagedRuleGroup."
+}
