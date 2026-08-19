@@ -225,7 +225,7 @@ class SageMaker(AWSService):
                 notebook_instance.subnet_id = describe_notebook_instance["SubnetId"]
             if (
                 "DirectInternetAccess" in describe_notebook_instance
-                and describe_notebook_instance["RootAccess"] == "Enabled"
+                and describe_notebook_instance["DirectInternetAccess"] == "Enabled"
             ):
                 notebook_instance.direct_internet_access = True
             if "KmsKeyId" in describe_notebook_instance:

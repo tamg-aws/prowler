@@ -1,0 +1,1 @@
+`sagemaker_notebook_instance_without_direct_internet_access_configured` now reads the `DirectInternetAccess` setting instead of `RootAccess`, so a notebook instance with direct internet access enabled and root access disabled is reported as FAIL rather than PASS
