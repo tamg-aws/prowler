@@ -836,10 +836,14 @@
           "Section": "AI Application Security",
           "SubSection": "ML Platform Security",
           "Service": "sagemaker",
-          "Type": "Manual"
+          "Type": "Automated"
         }
       ],
-      "Checks": []
+      "Checks": [
+        "sagemaker_models_monitor_enabled",
+        "sagemaker_clarify_exists",
+        "sagemaker_endpoint_data_capture_enabled"
+      ]
     },
     {
       "Id": "AISF-DETECT-01",
