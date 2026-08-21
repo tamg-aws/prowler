@@ -1,0 +1,47 @@
+{
+  "Provider": "aws",
+  "CheckID": "sagemaker_transform_job_volume_and_output_encryption_enabled",
+  "CheckTitle": "Amazon SageMaker AI batch transform job volume and output are encrypted with a KMS key",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices/Encryption at Rest",
+    "Software and Configuration Checks/Industry and Regulatory Standards/AWS Foundational Security Best Practices",
+    "Effects/Data Exposure"
+  ],
+  "ServiceName": "sagemaker",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "high",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Amazon SageMaker AI batch transform jobs** are evaluated for both **KMS keys** `DescribeTransformJob` returns: `TransformResources.VolumeKmsKeyId` for the ML storage volume the job runs on, and `TransformOutput.KmsKeyId` for the inference results written to **Amazon S3**. The finding names whichever is missing. Instance types with local storage take no volume key and are judged on output alone.",
+  "Risk": "Batch transform runs whole datasets through a model, so the volume holds the staged input and the output holds a result per record.\n\nWithout **customer managed keys** both land under AWS-owned or default **Amazon S3** keys, leaving key policy, **rotation** and revocation outside tenant control and widening exposure through **data exfiltration** or volume snapshot access.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/batch-transform.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_TransformOutput.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_TransformResources.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/key-management.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws sagemaker create-transform-job --transform-job-name <example_resource_name> --model-name <example_model_name> --transform-input DataSource={S3DataSource={S3DataType=S3Prefix,S3Uri=s3://<example_bucket>/input/}} --transform-output S3OutputPath=s3://<example_bucket>/output/,KmsKeyId=<example_kms_key_arn> --transform-resources InstanceType=ml.m5.large,InstanceCount=1,VolumeKmsKeyId=<example_kms_key_arn>",
+      "NativeIaC": "```yaml\n# CloudFormation: SageMaker AI batch transform job with volume and output KMS encryption\nResources:\n  <example_resource_name>:\n    Type: AWS::SageMaker::TransformJob\n    Properties:\n      TransformJobName: <example_resource_name>\n      ModelName: <example_model_name>\n      TransformInput:\n        DataSource:\n          S3DataSource:\n            S3DataType: S3Prefix\n            S3Uri: s3://<example_bucket>/input/\n      TransformOutput:\n        S3OutputPath: s3://<example_bucket>/output/\n        KmsKeyId: <example_kms_key_arn>       # CRITICAL: encrypts the inference results written to S3\n      TransformResources:\n        InstanceType: ml.m5.large             # NOTE: takes a volume key; ml.g4dn/g5/trn1 do not, see Notes\n        InstanceCount: 1\n        VolumeKmsKeyId: <example_kms_key_arn> # CRITICAL: encrypts the ML storage volume\n```",
+      "Other": "1. In the AWS console, go to SageMaker AI > Inference > Batch transform jobs\n2. Select the unencrypted job and click Clone to create a new job\n3. Under Output data configuration, set Encryption key to your customer managed KMS key\n4. Under Resource configuration, set Volume encryption key to your customer managed KMS key (available only on instance types without local NVMe storage)\n5. Complete the remaining fields and click Create job\n6. Confirm the new job lists a KMS key under both Output data configuration and Resource configuration",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Set both `TransformResources.VolumeKmsKeyId` and `TransformOutput.KmsKeyId` to a **customer managed KMS key** on every batch transform job.\n\nHold batch inference to the same standard as real-time inference: **network isolation** and private **VPC** settings on the model it references, and tenant-controlled keys on both the volume and the output.",
+      "Url": "https://hub.prowler.com/check/sagemaker_transform_job_volume_and_output_encryption_enabled"
+    }
+  },
+  "Categories": [
+    "encryption",
+    "gen-ai"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "sagemaker_models_network_isolation_enabled",
+    "sagemaker_models_vpc_settings_configured"
+  ],
+  "Notes": "Reports MANUAL when the job's encryption configuration, including the instance type the volume clause depends on, cannot be read; an undescribable job is never reported as compliant. The volume clause is not asserted on instance types with local storage (ml.g4dn, ml.g5 and ml.trn1 of the families in the transform InstanceType enum, per ec2:DescribeInstanceTypes InstanceStorageSupported), because SageMaker AI rejects a VolumeKmsKeyId there and those volumes are already encrypted by a hardware module on the instance; such a job is judged on its output key alone and the report says so. No aws_sagemaker_transform_job resource exists in the Terraform AWS provider, hence the empty Terraform block."
+}

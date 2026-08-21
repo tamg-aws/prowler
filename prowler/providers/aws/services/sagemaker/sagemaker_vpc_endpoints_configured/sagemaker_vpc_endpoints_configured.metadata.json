@@ -1,0 +1,45 @@
+{
+  "Provider": "aws",
+  "CheckID": "sagemaker_vpc_endpoints_configured",
+  "CheckTitle": "VPC endpoints ensure private connectivity for the SageMaker AI APIs",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices/Network Reachability"
+  ],
+  "ServiceName": "sagemaker",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "AwsEc2VpcEndpointService",
+  "ResourceGroup": "network",
+  "Description": "**Amazon VPCs** in regions holding SageMaker AI resources are evaluated for **interface VPC endpoints** to the control plane (`sagemaker.api`) and the inference runtime (`sagemaker.runtime`). Only endpoints in `available` state count, and the `-fips` spelling of either service satisfies it. Their presence indicates private SageMaker AI API connectivity over **AWS PrivateLink**.",
+  "Risk": "Without private SageMaker AI endpoints, training, deployment and `InvokeEndpoint` traffic leaves the VPC through an internet or NAT gateway.\n\nThat widens the network path available to **DNS hijacking** and **man-in-the-middle** attacks, weakens **egress isolation** so a compromised training container can reach the internet, and makes SageMaker AI access depend on public routing.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/interface-vpc-endpoint.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/infrastructure-give-sagemaker-access-to-resources.html",
+    "https://docs.aws.amazon.com/vpc/latest/privatelink/create-interface-endpoint.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws ec2 create-vpc-endpoint --vpc-id <example_resource_id> --service-name com.amazonaws.<example_region>.sagemaker.api --vpc-endpoint-type Interface --subnet-ids <example_subnet_id> --security-group-ids <example_security_group_id>\naws ec2 create-vpc-endpoint --vpc-id <example_resource_id> --service-name com.amazonaws.<example_region>.sagemaker.runtime --vpc-endpoint-type Interface --subnet-ids <example_subnet_id> --security-group-ids <example_security_group_id>",
+      "NativeIaC": "```yaml\n# CloudFormation: create the SageMaker AI interface VPC endpoints in the VPC\nResources:\n  SageMakerApiEndpoint:\n    Type: AWS::EC2::VPCEndpoint\n    Properties:\n      VpcId: \"<example_resource_id>\"                                        # CRITICAL: target VPC\n      ServiceName: !Sub \"com.amazonaws.${AWS::Region}.sagemaker.api\"        # CRITICAL: SageMaker AI control plane endpoint\n      VpcEndpointType: Interface                                            # CRITICAL: interface endpoint\n      PrivateDnsEnabled: true\n      SubnetIds:\n        - \"<example_subnet_id>\"\n      SecurityGroupIds:\n        - \"<example_security_group_id>\"\n  SageMakerRuntimeEndpoint:\n    Type: AWS::EC2::VPCEndpoint\n    Properties:\n      VpcId: \"<example_resource_id>\"                                        # CRITICAL: target VPC\n      ServiceName: !Sub \"com.amazonaws.${AWS::Region}.sagemaker.runtime\"    # CRITICAL: SageMaker AI runtime endpoint\n      VpcEndpointType: Interface                                            # CRITICAL: interface endpoint\n      PrivateDnsEnabled: true\n      SubnetIds:\n        - \"<example_subnet_id>\"\n      SecurityGroupIds:\n        - \"<example_security_group_id>\"\n```",
+      "Other": "1. In the AWS console, go to VPC > Endpoints\n2. Click Create endpoint\n3. For Service category choose AWS services, then select com.amazonaws.<region>.sagemaker.api\n4. Select the VPC, at least one subnet and a security group, and keep Enable DNS name selected\n5. Click Create endpoint\n6. Repeat steps 2-5 for com.amazonaws.<region>.sagemaker.runtime",
+      "Terraform": "```hcl\n# SageMaker AI control plane interface VPC endpoint\nresource \"aws_vpc_endpoint\" \"sagemaker_api\" {\n  vpc_id              = \"<example_resource_id>\"                     # CRITICAL: target VPC\n  service_name        = \"com.amazonaws.<example_region>.sagemaker.api\" # CRITICAL: SageMaker AI control plane endpoint\n  vpc_endpoint_type   = \"Interface\"                                 # CRITICAL: interface endpoint\n  subnet_ids          = [\"<example_subnet_id>\"]\n  security_group_ids  = [\"<example_security_group_id>\"]\n  private_dns_enabled = true\n}\n\n# SageMaker AI runtime interface VPC endpoint\nresource \"aws_vpc_endpoint\" \"sagemaker_runtime\" {\n  vpc_id              = \"<example_resource_id>\"                         # CRITICAL: target VPC\n  service_name        = \"com.amazonaws.<example_region>.sagemaker.runtime\" # CRITICAL: SageMaker AI runtime endpoint\n  vpc_endpoint_type   = \"Interface\"                                     # CRITICAL: interface endpoint\n  subnet_ids          = [\"<example_subnet_id>\"]\n  security_group_ids  = [\"<example_security_group_id>\"]\n  private_dns_enabled = true\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Create **interface VPC endpoints** for `sagemaker.api` and `sagemaker.runtime` in every VPC that runs SageMaker AI workloads, with **private DNS** enabled so existing SDK calls resolve to them without code changes.\n\nApply a **least privilege** endpoint policy, then remove the internet and NAT routes the workload no longer needs.",
+      "Url": "https://hub.prowler.com/check/sagemaker_vpc_endpoints_configured"
+    }
+  },
+  "Categories": [
+    "internet-exposed",
+    "trust-boundaries",
+    "gen-ai"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrock_vpc_endpoints_configured",
+    "vpc_endpoint_for_ec2_enabled"
+  ],
+  "Notes": "Only VPCs in regions holding a real SageMaker AI resource (notebook instance, model, training job, processing job, transform job, endpoint configuration or domain) are evaluated. Region scope is deliberately not derived from the model registry or monitoring schedule collections, which append one synthetic record per scanned region and would therefore put every region in scope. Workload-specific endpoints such as sagemaker.featurestore-runtime, sagemaker.metrics, aws.sagemaker.<region>.studio and aws.sagemaker.<region>.notebook are not required, because a VPC that needs none of them is not misconfigured for lacking them."
+}

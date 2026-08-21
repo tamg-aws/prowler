@@ -104,6 +104,9 @@
         "rds_instance_storage_encrypted",
         "sagemaker_notebook_instance_encryption_enabled",
         "sagemaker_training_jobs_volume_and_output_encryption_enabled",
+        "sagemaker_training_jobs_output_kms_encryption_enabled",
+        "sagemaker_transform_job_volume_and_output_encryption_enabled",
+        "sagemaker_endpoint_config_kms_encryption_enabled",
         "bedrock_model_invocation_logs_encryption_enabled",
         "cloudtrail_kms_encryption_enabled",
         "cloudwatch_log_group_kms_encryption_enabled",
@@ -177,6 +180,7 @@
         "vpc_endpoint_connections_trust_boundaries",
         "vpc_endpoint_services_allowed_principals_trust_boundaries",
         "vpc_endpoint_for_ec2_enabled",
+        "sagemaker_vpc_endpoints_configured",
         "vpc_peering_routing_tables_with_least_privilege"
       ]
     },
@@ -484,7 +488,8 @@
         "awslambda_function_no_secrets_in_variables",
         "ecs_task_definitions_no_environment_secrets",
         "ec2_instance_secrets_user_data",
-        "cloudwatch_log_group_no_secrets_in_logs"
+        "cloudwatch_log_group_no_secrets_in_logs",
+        "sagemaker_notebook_instance_no_secrets"
       ]
     },
     {
@@ -801,7 +806,8 @@
         "sagemaker_training_jobs_network_isolation_enabled",
         "sagemaker_training_jobs_vpc_settings_configured",
         "sagemaker_training_jobs_intercontainer_encryption_enabled",
-        "sagemaker_training_jobs_volume_and_output_encryption_enabled"
+        "sagemaker_training_jobs_volume_and_output_encryption_enabled",
+        "sagemaker_training_jobs_output_kms_encryption_enabled"
       ]
     },
     {

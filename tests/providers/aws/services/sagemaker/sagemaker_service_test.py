@@ -26,8 +26,26 @@ test_arn_model = (
 )
 test_training_job = "test-training-job"
 test_arn_training_job = f"arn:aws:sagemaker:{AWS_REGION_EU_WEST_1}:{AWS_ACCOUNT_NUMBER}:training-job/{test_model}"
+# Two transform jobs on two ListTransformJobs pages, so a first-page-only
+# collector fails the pagination test below.
+test_transform_job_page_1 = "test-transform-job-page-1"
+test_transform_job_page_2 = "test-transform-job-page-2"
+test_arn_transform_job_page_1 = f"arn:aws:sagemaker:{AWS_REGION_EU_WEST_1}:{AWS_ACCOUNT_NUMBER}:transform-job/{test_transform_job_page_1}"
+test_arn_transform_job_page_2 = f"arn:aws:sagemaker:{AWS_REGION_EU_WEST_1}:{AWS_ACCOUNT_NUMBER}:transform-job/{test_transform_job_page_2}"
+transform_jobs_next_token = "transform-jobs-page-2"
+# Page-two fixtures for the collectors the shared mock keeps at one entry, so their
+# pagination is proven without disturbing the single-resource assertions elsewhere.
+test_training_job_page_2 = "test-training-job-page-2"
+test_arn_training_job_page_2 = f"arn:aws:sagemaker:{AWS_REGION_EU_WEST_1}:{AWS_ACCOUNT_NUMBER}:training-job/{test_training_job_page_2}"
+training_jobs_next_token = "training-jobs-page-2"
+endpoint_config_name_page_2 = "endpoint-config-test-page-2"
+endpoint_config_arn_page_2 = f"arn:aws:sagemaker:{AWS_REGION_EU_WEST_1}:{AWS_ACCOUNT_NUMBER}:endpoint-config/{endpoint_config_name_page_2}"
+endpoint_configs_next_token = "endpoint-configs-page-2"
 subnet_id = "subnet-" + str(uuid4())
 kms_key_id = str(uuid4())
+output_kms_key_id = str(uuid4())
+transform_output_kms_key_id = str(uuid4())
+transform_volume_kms_key_id = str(uuid4())
 lifecycle_config_name = "test-lifecycle-config"
 # base64 of "echo OnCreate" / "echo OnStart"
 lifecycle_on_create_b64 = "ZWNobyBPbkNyZWF0ZQ=="
@@ -74,6 +92,38 @@ def mock_make_api_call(self, operation_name, kwarg):
                 },
             ]
         }
+    if operation_name == "ListTransformJobs":
+        if kwarg.get("NextToken") == transform_jobs_next_token:
+            return {
+                "TransformJobSummaries": [
+                    {
+                        "TransformJobName": test_transform_job_page_2,
+                        "TransformJobArn": test_arn_transform_job_page_2,
+                    },
+                ]
+            }
+        return {
+            "TransformJobSummaries": [
+                {
+                    "TransformJobName": test_transform_job_page_1,
+                    "TransformJobArn": test_arn_transform_job_page_1,
+                },
+            ],
+            "NextToken": transform_jobs_next_token,
+        }
+    if operation_name == "DescribeTransformJob":
+        return {
+            "TransformJobName": kwarg["TransformJobName"],
+            "TransformOutput": {
+                "S3OutputPath": "s3://test-bucket/output/",
+                "KmsKeyId": transform_output_kms_key_id,
+            },
+            "TransformResources": {
+                "InstanceType": "ml.m5.large",
+                "InstanceCount": 1,
+                "VolumeKmsKeyId": transform_volume_kms_key_id,
+            },
+        }
     if operation_name == "DescribeNotebookInstance":
         return {
             "SubnetId": subnet_id,
@@ -100,6 +150,10 @@ def mock_make_api_call(self, operation_name, kwarg):
         return {
             "ResourceConfig": {
                 "VolumeKmsKeyId": kms_key_id,
+            },
+            "OutputDataConfig": {
+                "S3OutputPath": "s3://test-bucket/output/",
+                "KmsKeyId": output_kms_key_id,
             },
             "VpcConfig": {
                 "Subnets": [
@@ -154,7 +208,13 @@ def mock_make_api_call(self, operation_name, kwarg):
                     "VariantName": "Variant2",
                     "InitialInstanceCount": 2,
                 },
-            ]
+            ],
+            "DataCaptureConfig": {
+                "EnableCapture": True,
+                "InitialSamplingPercentage": 100,
+                "DestinationS3Uri": "s3://test-bucket/datacapture/",
+                "CaptureOptions": [{"CaptureMode": "InputAndOutput"}],
+            },
         }
     if operation_name == "ListDomains":
         return {
@@ -325,6 +385,300 @@ class Test_SageMaker_Service:
         assert sagemaker.sagemaker_training_jobs[0].volume_kms_key_id == kms_key_id
         assert sagemaker.sagemaker_training_jobs[0].vpc_config_subnets == [subnet_id]
 
+    # Test SageMaker describe training jobs output data config
+    def test_describe_training_jobs_output_data_config(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+        sagemaker = SageMaker(aws_provider)
+        training_job = sagemaker.sagemaker_training_jobs[0]
+        assert training_job.output_kms_key_id == output_kms_key_id
+        assert training_job.output_config_scan_failed is False
+
+    def test_describe_training_jobs_without_output_data_config(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_without_output_data_config(self, operation_name, kwarg):
+            if operation_name == "DescribeTrainingJob":
+                return {"ResourceConfig": {"VolumeKmsKeyId": kms_key_id}}
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call",
+            new=mock_without_output_data_config,
+        ):
+            sagemaker = SageMaker(aws_provider)
+            training_job = sagemaker.sagemaker_training_jobs[0]
+            assert training_job.output_kms_key_id is None
+            assert training_job.output_config_scan_failed is True
+
+    def test_describe_training_jobs_describe_error(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_describe_error(self, operation_name, kwarg):
+            if operation_name == "DescribeTrainingJob":
+                raise botocore.exceptions.ClientError(
+                    {
+                        "Error": {
+                            "Code": "AccessDeniedException",
+                            "Message": "User is not authorized to perform sagemaker:DescribeTrainingJob",
+                        }
+                    },
+                    "DescribeTrainingJob",
+                )
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_describe_error
+        ):
+            sagemaker = SageMaker(aws_provider)
+            training_job = sagemaker.sagemaker_training_jobs[0]
+            assert training_job.output_kms_key_id is None
+            assert training_job.output_config_scan_failed is True
+
+    def test_list_training_jobs_paginates(self):
+        """The output encryption check under-reports if this reads page one only."""
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_two_pages(self, operation_name, kwarg):
+            if operation_name == "ListTrainingJobs":
+                if kwarg.get("NextToken") == training_jobs_next_token:
+                    return {
+                        "TrainingJobSummaries": [
+                            {
+                                "TrainingJobName": test_training_job_page_2,
+                                "TrainingJobArn": test_arn_training_job_page_2,
+                            },
+                        ]
+                    }
+                return {
+                    "TrainingJobSummaries": [
+                        {
+                            "TrainingJobName": test_training_job,
+                            "TrainingJobArn": test_arn_training_job,
+                        },
+                    ],
+                    "NextToken": training_jobs_next_token,
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch("botocore.client.BaseClient._make_api_call", new=mock_two_pages):
+            sagemaker = SageMaker(aws_provider)
+            names = sorted(job.name for job in sagemaker.sagemaker_training_jobs)
+            arns = sorted(job.arn for job in sagemaker.sagemaker_training_jobs)
+            assert names == sorted([test_training_job, test_training_job_page_2])
+            assert arns == sorted([test_arn_training_job, test_arn_training_job_page_2])
+
+    def test_list_endpoint_configs_paginates(self):
+        """The data capture check under-reports if this reads page one only."""
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_two_pages(self, operation_name, kwarg):
+            if operation_name == "ListEndpointConfigs":
+                if kwarg.get("NextToken") == endpoint_configs_next_token:
+                    return {
+                        "EndpointConfigs": [
+                            {
+                                "EndpointConfigName": endpoint_config_name_page_2,
+                                "EndpointConfigArn": endpoint_config_arn_page_2,
+                            },
+                        ]
+                    }
+                return {
+                    "EndpointConfigs": [
+                        {
+                            "EndpointConfigName": endpoint_config_name,
+                            "EndpointConfigArn": endpoint_config_arn,
+                        },
+                    ],
+                    "NextToken": endpoint_configs_next_token,
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch("botocore.client.BaseClient._make_api_call", new=mock_two_pages):
+            sagemaker = SageMaker(aws_provider)
+            assert sorted(sagemaker.endpoint_configs) == sorted(
+                [endpoint_config_arn, endpoint_config_arn_page_2]
+            )
+            assert (
+                sagemaker.endpoint_configs[endpoint_config_arn_page_2].name
+                == endpoint_config_name_page_2
+            )
+            assert (
+                sagemaker.endpoint_configs[
+                    endpoint_config_arn_page_2
+                ].data_capture_enabled
+                is True
+            )
+
+    # Test SageMaker list transform jobs
+    def test_list_transform_jobs_paginates(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+        sagemaker = SageMaker(aws_provider)
+        names = [job.name for job in sagemaker.sagemaker_transform_jobs]
+        arns = [job.arn for job in sagemaker.sagemaker_transform_jobs]
+        # The second entry only exists on page two of ListTransformJobs.
+        assert sorted(names) == [test_transform_job_page_1, test_transform_job_page_2]
+        assert sorted(arns) == sorted(
+            [test_arn_transform_job_page_1, test_arn_transform_job_page_2]
+        )
+        for job in sagemaker.sagemaker_transform_jobs:
+            assert job.region == AWS_REGION_EU_WEST_1
+            assert job.tags == [{"Key": "test", "Value": "test"}]
+
+    # Test SageMaker describe transform job
+    def test_describe_transform_job(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+        sagemaker = SageMaker(aws_provider)
+        for job in sagemaker.sagemaker_transform_jobs:
+            assert job.instance_type == "ml.m5.large"
+            assert job.volume_kms_key_id == transform_volume_kms_key_id
+            assert job.output_kms_key_id == transform_output_kms_key_id
+            assert job.encryption_config_scan_failed is False
+
+    def test_describe_transform_job_without_instance_type(self):
+        """InstanceType is a required member; without it the volume clause is undecidable."""
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_without_instance_type(self, operation_name, kwarg):
+            if operation_name == "DescribeTransformJob":
+                return {
+                    "TransformJobName": kwarg["TransformJobName"],
+                    "TransformOutput": {
+                        "S3OutputPath": "s3://test-bucket/output/",
+                        "KmsKeyId": transform_output_kms_key_id,
+                    },
+                    "TransformResources": {"InstanceCount": 1},
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_without_instance_type
+        ):
+            sagemaker = SageMaker(aws_provider)
+            for job in sagemaker.sagemaker_transform_jobs:
+                assert job.instance_type is None
+                assert job.encryption_config_scan_failed is True
+
+    def test_describe_transform_job_local_storage_instance(self):
+        """A local-storage instance legitimately reports no VolumeKmsKeyId."""
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_local_storage(self, operation_name, kwarg):
+            if operation_name == "DescribeTransformJob":
+                return {
+                    "TransformJobName": kwarg["TransformJobName"],
+                    "TransformOutput": {
+                        "S3OutputPath": "s3://test-bucket/output/",
+                        "KmsKeyId": transform_output_kms_key_id,
+                    },
+                    "TransformResources": {
+                        "InstanceType": "ml.g5.2xlarge",
+                        "InstanceCount": 1,
+                    },
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch("botocore.client.BaseClient._make_api_call", new=mock_local_storage):
+            sagemaker = SageMaker(aws_provider)
+            for job in sagemaker.sagemaker_transform_jobs:
+                assert job.instance_type == "ml.g5.2xlarge"
+                assert job.volume_kms_key_id is None
+                assert job.encryption_config_scan_failed is False
+
+    def test_describe_transform_job_without_transform_output(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_without_transform_output(self, operation_name, kwarg):
+            if operation_name == "DescribeTransformJob":
+                return {
+                    "TransformJobName": kwarg["TransformJobName"],
+                    "TransformResources": {
+                        "InstanceType": "ml.m5.large",
+                        "InstanceCount": 1,
+                        "VolumeKmsKeyId": transform_volume_kms_key_id,
+                    },
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call",
+            new=mock_without_transform_output,
+        ):
+            sagemaker = SageMaker(aws_provider)
+            for job in sagemaker.sagemaker_transform_jobs:
+                assert job.output_kms_key_id is None
+                assert job.encryption_config_scan_failed is True
+
+    def test_describe_transform_job_without_transform_resources(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_without_transform_resources(self, operation_name, kwarg):
+            if operation_name == "DescribeTransformJob":
+                return {
+                    "TransformJobName": kwarg["TransformJobName"],
+                    "TransformOutput": {
+                        "S3OutputPath": "s3://test-bucket/output/",
+                        "KmsKeyId": transform_output_kms_key_id,
+                    },
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call",
+            new=mock_without_transform_resources,
+        ):
+            sagemaker = SageMaker(aws_provider)
+            for job in sagemaker.sagemaker_transform_jobs:
+                assert job.volume_kms_key_id is None
+                assert job.encryption_config_scan_failed is True
+
+    def test_describe_transform_job_without_either_kms_key(self):
+        """Both structures present but neither carries a key: a definite FAIL, not MANUAL."""
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_without_keys(self, operation_name, kwarg):
+            if operation_name == "DescribeTransformJob":
+                return {
+                    "TransformJobName": kwarg["TransformJobName"],
+                    "TransformOutput": {"S3OutputPath": "s3://test-bucket/output/"},
+                    "TransformResources": {
+                        "InstanceType": "ml.m5.large",
+                        "InstanceCount": 1,
+                    },
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch("botocore.client.BaseClient._make_api_call", new=mock_without_keys):
+            sagemaker = SageMaker(aws_provider)
+            for job in sagemaker.sagemaker_transform_jobs:
+                assert job.volume_kms_key_id is None
+                assert job.output_kms_key_id is None
+                assert job.encryption_config_scan_failed is False
+
+    def test_describe_transform_job_describe_error(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_describe_error(self, operation_name, kwarg):
+            if operation_name == "DescribeTransformJob":
+                raise botocore.exceptions.ClientError(
+                    {
+                        "Error": {
+                            "Code": "AccessDeniedException",
+                            "Message": "User is not authorized to perform sagemaker:DescribeTransformJob",
+                        }
+                    },
+                    "DescribeTransformJob",
+                )
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_describe_error
+        ):
+            sagemaker = SageMaker(aws_provider)
+            for job in sagemaker.sagemaker_transform_jobs:
+                assert job.volume_kms_key_id is None
+                assert job.output_kms_key_id is None
+                assert job.encryption_config_scan_failed is True
+
     # Test SageMaker list endpoint configs
     def test_list_endpoint_configs(self):
         aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
@@ -357,6 +711,110 @@ class Test_SageMaker_Service:
                 assert prod_variant.initial_instance_count == 5
             else:
                 assert prod_variant.initial_instance_count == 2
+
+    # Test SageMaker describe endpoint config data capture
+    def test_describe_endpoint_configs_data_capture(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+        sagemaker = SageMaker(aws_provider)
+        endpoint_config = sagemaker.endpoint_configs[endpoint_config_arn]
+        assert endpoint_config.data_capture_enabled is True
+        assert endpoint_config.data_capture_scan_failed is False
+
+    def test_describe_endpoint_configs_data_capture_disabled(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_capture_disabled(self, operation_name, kwarg):
+            if operation_name == "DescribeEndpointConfig":
+                return {
+                    "ProductionVariants": [
+                        {"VariantName": prod_variant_name, "InitialInstanceCount": 5},
+                    ],
+                    "DataCaptureConfig": {
+                        "EnableCapture": False,
+                        "InitialSamplingPercentage": 100,
+                        "DestinationS3Uri": "s3://test-bucket/datacapture/",
+                        "CaptureOptions": [{"CaptureMode": "InputAndOutput"}],
+                    },
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_capture_disabled
+        ):
+            sagemaker = SageMaker(aws_provider)
+            endpoint_config = sagemaker.endpoint_configs[endpoint_config_arn]
+            assert endpoint_config.data_capture_enabled is False
+            assert endpoint_config.data_capture_scan_failed is False
+
+    def test_describe_endpoint_configs_without_data_capture_config(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_without_data_capture(self, operation_name, kwarg):
+            if operation_name == "DescribeEndpointConfig":
+                return {
+                    "ProductionVariants": [
+                        {"VariantName": prod_variant_name, "InitialInstanceCount": 5},
+                    ],
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_without_data_capture
+        ):
+            sagemaker = SageMaker(aws_provider)
+            endpoint_config = sagemaker.endpoint_configs[endpoint_config_arn]
+            assert endpoint_config.data_capture_enabled is False
+            assert endpoint_config.data_capture_scan_failed is False
+
+    def test_describe_endpoint_configs_data_capture_defaults_enabled(self):
+        """DataCaptureConfig without EnableCapture: the API documents it as enabled."""
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_capture_without_flag(self, operation_name, kwarg):
+            if operation_name == "DescribeEndpointConfig":
+                return {
+                    "ProductionVariants": [
+                        {"VariantName": prod_variant_name, "InitialInstanceCount": 5},
+                    ],
+                    "DataCaptureConfig": {
+                        "InitialSamplingPercentage": 100,
+                        "DestinationS3Uri": "s3://test-bucket/datacapture/",
+                        "CaptureOptions": [{"CaptureMode": "InputAndOutput"}],
+                    },
+                }
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_capture_without_flag
+        ):
+            sagemaker = SageMaker(aws_provider)
+            endpoint_config = sagemaker.endpoint_configs[endpoint_config_arn]
+            assert endpoint_config.data_capture_enabled is True
+            assert endpoint_config.data_capture_scan_failed is False
+
+    def test_describe_endpoint_configs_describe_error(self):
+        aws_provider = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+
+        def mock_describe_error(self, operation_name, kwarg):
+            if operation_name == "DescribeEndpointConfig":
+                raise botocore.exceptions.ClientError(
+                    {
+                        "Error": {
+                            "Code": "AccessDeniedException",
+                            "Message": "User is not authorized to perform sagemaker:DescribeEndpointConfig",
+                        }
+                    },
+                    "DescribeEndpointConfig",
+                )
+            return mock_make_api_call(self, operation_name, kwarg)
+
+        with patch(
+            "botocore.client.BaseClient._make_api_call", new=mock_describe_error
+        ):
+            sagemaker = SageMaker(aws_provider)
+            endpoint_config = sagemaker.endpoint_configs[endpoint_config_arn]
+            assert endpoint_config.data_capture_enabled is None
+            assert endpoint_config.data_capture_scan_failed is True
 
     # Test SageMaker list domains
     def test_list_domains(self):
@@ -446,6 +904,9 @@ class Test_SageMaker_Service:
                     "prowler.providers.aws.services.sagemaker.sagemaker_service.SageMaker._list_training_jobs"
                 ),
                 patch(
+                    "prowler.providers.aws.services.sagemaker.sagemaker_service.SageMaker._list_transform_jobs"
+                ),
+                patch(
                     "prowler.providers.aws.services.sagemaker.sagemaker_service.SageMaker._list_endpoint_configs"
                 ),
                 patch(
@@ -455,13 +916,13 @@ class Test_SageMaker_Service:
                 sagemaker_service = SageMaker(audit_info)
 
                 # Check that __threading_call__ was called for _list_tags_for_resource
-                # (one for each resource type: models, notebooks, training jobs, processing jobs, endpoint configs, domains)
+                # (one for each resource type: models, notebooks, training jobs, processing jobs, transform jobs, endpoint configs, domains)
                 tag_calls = [
                     c
                     for c in mock_threading_call.call_args_list
                     if c[0][0] == sagemaker_service._list_tags_for_resource
                 ]
-                assert len(tag_calls) == 6
+                assert len(tag_calls) == 7
 
     # Test SageMaker list model package groups
     def test_list_model_package_groups(self):

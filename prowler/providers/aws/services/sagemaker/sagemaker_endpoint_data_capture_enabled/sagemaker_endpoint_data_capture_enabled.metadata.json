@@ -1,0 +1,46 @@
+{
+  "Provider": "aws",
+  "CheckID": "sagemaker_endpoint_data_capture_enabled",
+  "CheckTitle": "Amazon SageMaker AI endpoint configuration has inference data capture enabled",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "Software and Configuration Checks/Industry and Regulatory Standards/AWS Foundational Security Best Practices"
+  ],
+  "ServiceName": "sagemaker",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Amazon SageMaker AI endpoint configurations** are evaluated for `DataCaptureConfig`, which writes the inference requests and responses served by the endpoint to **Amazon S3**.\n\nData capture is the prerequisite for **SageMaker Model Monitor**: without it a monitoring schedule has no captured traffic to baseline against.",
+  "Risk": "An endpoint that captures nothing leaves no record of what was sent to the model or what it returned, so **data drift**, model degradation, and **adversarial** or **prompt injection** inputs pass unobserved and cannot be reconstructed afterwards.\n\nIncident investigation and abuse attribution both lose their primary evidence source.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-capture.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_DataCaptureConfig.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws sagemaker create-endpoint-config --endpoint-config-name <example_resource_name> --production-variants VariantName=AllTraffic,ModelName=<example_model_name>,InitialInstanceCount=1,InstanceType=ml.m5.large --data-capture-config 'EnableCapture=true,InitialSamplingPercentage=100,DestinationS3Uri=s3://<example_bucket>/datacapture/,KmsKeyId=<example_kms_key_arn>,CaptureOptions=[{CaptureMode=InputAndOutput}]'\naws sagemaker update-endpoint --endpoint-name <example_endpoint_name> --endpoint-config-name <example_resource_name>",
+      "NativeIaC": "```yaml\n# CloudFormation: SageMaker AI endpoint configuration with inference data capture enabled\nResources:\n  <example_resource_name>:\n    Type: AWS::SageMaker::EndpointConfig\n    Properties:\n      EndpointConfigName: <example_resource_name>\n      ProductionVariants:\n        - VariantName: AllTraffic\n          ModelName: <example_model_name>\n          InitialInstanceCount: 1\n          InstanceType: ml.m5.large\n          InitialVariantWeight: 1\n      DataCaptureConfig:\n        EnableCapture: true                                  # CRITICAL: turns inference data capture on\n        InitialSamplingPercentage: 100\n        DestinationS3Uri: s3://<example_bucket>/datacapture/\n        KmsKeyId: <example_kms_key_arn>\n        CaptureOptions:\n          - CaptureMode: InputAndOutput\n```",
+      "Other": "1. In the AWS console, go to SageMaker AI > Inference > Endpoint configurations\n2. Click Create endpoint configuration and add the same production variant as the current configuration\n3. Expand Data capture, select Enable data capture, set the S3 location, sampling percentage and encryption key\n4. Click Create endpoint configuration\n5. Go to Inference > Endpoints, select the endpoint, click Update endpoint configuration and choose the new configuration",
+      "Terraform": "```hcl\n# SageMaker AI endpoint configuration with inference data capture enabled\nresource \"aws_sagemaker_endpoint_configuration\" \"<example_resource_name>\" {\n  name = \"<example_resource_name>\"\n\n  production_variants {\n    variant_name           = \"AllTraffic\"\n    model_name             = \"<example_model_name>\"\n    initial_instance_count = 1\n    instance_type          = \"ml.m5.large\"\n  }\n\n  data_capture_config {\n    enable_capture              = true # CRITICAL: turns inference data capture on\n    initial_sampling_percentage = 100\n    destination_s3_uri          = \"s3://<example_bucket>/datacapture/\"\n    kms_key_id                  = \"<example_kms_key_arn>\"\n\n    capture_options {\n      capture_mode = \"InputAndOutput\"\n    }\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Enable `DataCaptureConfig` on every endpoint configuration serving production traffic, sending captured requests and responses to a **KMS encrypted** Amazon S3 prefix.\n\nThen attach a **SageMaker Model Monitor** schedule to the endpoint so the captured traffic is baselined for **data quality**, **model quality** and **bias drift** rather than only stored.",
+      "Url": "https://hub.prowler.com/check/sagemaker_endpoint_data_capture_enabled"
+    }
+  },
+  "Categories": [
+    "logging",
+    "forensics-ready",
+    "gen-ai"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "sagemaker_models_monitor_enabled",
+    "sagemaker_endpoint_config_kms_encryption_enabled"
+  ],
+  "Notes": "Endpoint configurations are immutable, so remediation creates a new configuration and points the endpoint at it. A DataCaptureConfig present without EnableCapture reports PASS: the SageMaker AI API documents that field as defaulting to enabled, and CaptureOptions, DestinationS3Uri and InitialSamplingPercentage are all required members, so capture is genuinely configured. Note that the Terraform provider instead defaults enable_capture to false and sends it explicitly. Reports MANUAL when DescribeEndpointConfig fails."
+}

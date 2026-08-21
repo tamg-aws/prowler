@@ -1,0 +1,44 @@
+{
+  "Provider": "aws",
+  "CheckID": "sagemaker_training_jobs_output_kms_encryption_enabled",
+  "CheckTitle": "Amazon SageMaker AI training job output artifacts are encrypted with a KMS key",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices/Encryption at Rest",
+    "Software and Configuration Checks/Industry and Regulatory Standards/AWS Foundational Security Best Practices",
+    "Effects/Data Exposure"
+  ],
+  "ServiceName": "sagemaker",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "high",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Amazon SageMaker AI training jobs** are evaluated for `OutputDataConfig.KmsKeyId`, the **KMS key** that encrypts the model artifacts the job writes to **Amazon S3**.\n\nThis is a different field from `ResourceConfig.VolumeKmsKeyId`, which covers only the ML storage volume attached to the training instance.",
+  "Risk": "Without an output **KMS key**, trained model weights land in **Amazon S3** under the account's default S3 KMS key, so the tenant controls neither the key policy nor **rotation** and cannot revoke access to the artifacts.\n\nStolen weights allow model extraction, inversion of the training data, and deployment of a tampered model.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/sagemaker/latest/dg/key-management.html",
+    "https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_OutputDataConfig.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws sagemaker create-training-job --training-job-name <example_resource_name> --role-arn <example_role_arn> --algorithm-specification TrainingImage=<example_ecr_image_uri>,TrainingInputMode=File --output-data-config S3OutputPath=s3://<example_bucket>/output/,KmsKeyId=<example_kms_key_arn> --resource-config InstanceType=ml.m5.large,InstanceCount=1,VolumeSizeInGB=30 --stopping-condition MaxRuntimeInSeconds=3600",
+      "NativeIaC": "```yaml\n# CloudFormation: SageMaker AI TrainingJob whose output artifacts are KMS encrypted\nResources:\n  <example_resource_name>:\n    Type: AWS::SageMaker::TrainingJob\n    Properties:\n      TrainingJobName: <example_resource_name>\n      RoleArn: <example_role_arn>\n      AlgorithmSpecification:\n        TrainingImage: <example_ecr_image_uri>\n        TrainingInputMode: File\n      OutputDataConfig:\n        S3OutputPath: s3://<example_bucket>/output/\n        KmsKeyId: <example_kms_key_arn>  # CRITICAL: encrypts the model artifacts written to S3\n      ResourceConfig:\n        InstanceType: ml.m5.large\n        InstanceCount: 1\n        VolumeSizeInGB: 30\n      StoppingCondition:\n        MaxRuntimeInSeconds: 3600\n```",
+      "Other": "1. In the AWS console, go to SageMaker AI > Training > Training jobs\n2. Select the job whose output is unencrypted and click Clone to create a new job\n3. Under Output data configuration, set Encryption key to your customer managed KMS key\n4. Complete the remaining fields and click Create training job\n5. Confirm the new job lists the KMS key under Output data configuration",
+      "Terraform": "```hcl\n# SageMaker AI training job whose output artifacts are KMS encrypted\nresource \"aws_sagemaker_training_job\" \"<example_resource_name>\" {\n  training_job_name = \"<example_resource_name>\"\n  role_arn          = \"<example_role_arn>\"\n\n  algorithm_specification {\n    training_image      = \"<example_ecr_image_uri>\"\n    training_input_mode = \"File\"\n  }\n\n  output_data_config {\n    s3_output_path = \"s3://<example_bucket>/output/\"\n    kms_key_id     = \"<example_kms_key_arn>\" # CRITICAL: encrypts the model artifacts written to S3\n  }\n\n  resource_config {\n    instance_type     = \"ml.m5.large\"\n    instance_count    = 1\n    volume_size_in_gb = 30\n  }\n\n  stopping_condition {\n    max_runtime_in_seconds = 3600\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Set `OutputDataConfig.KmsKeyId` to a **customer managed KMS key** on every training job so model artifacts are encrypted under a key you control.\n\nGrant the training role only `kms:Encrypt` and `kms:GenerateDataKey` on that key, enable **rotation**, and restrict who can read the output prefix.",
+      "Url": "https://hub.prowler.com/check/sagemaker_training_jobs_output_kms_encryption_enabled"
+    }
+  },
+  "Categories": [
+    "encryption",
+    "gen-ai"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "sagemaker_training_jobs_volume_and_output_encryption_enabled"
+  ],
+  "Notes": "Reports MANUAL when OutputDataConfig cannot be read, so an undescribable job is never reported as compliant. A job whose S3OutputPath targets an S3 Express One Zone directory bucket cannot carry a KMS key at all (those buckets are encrypted with SSE-S3); such a job reports FAIL and the remediation does not apply to it."
+}

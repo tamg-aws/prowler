@@ -18,6 +18,7 @@ class SageMaker(AWSService):
         self.sagemaker_training_jobs = []
         self.sagemaker_processing_jobs = []
         self.processing_jobs_scanned_regions = set()
+        self.sagemaker_transform_jobs = []
         self.sagemaker_domains = []
         self.endpoint_configs = {}
         self.sagemaker_model_registries = []
@@ -28,6 +29,7 @@ class SageMaker(AWSService):
         self.__threading_call__(self._list_models)
         self.__threading_call__(self._list_training_jobs)
         self.__threading_call__(self._list_processing_jobs)
+        self.__threading_call__(self._list_transform_jobs)
         self.__threading_call__(self._list_endpoint_configs)
         self.__threading_call__(self._list_domains)
         self.__threading_call__(self._list_model_package_groups)
@@ -50,6 +52,9 @@ class SageMaker(AWSService):
             self._describe_processing_job, self.sagemaker_processing_jobs
         )
         self.__threading_call__(
+            self._describe_transform_job, self.sagemaker_transform_jobs
+        )
+        self.__threading_call__(
             self._describe_endpoint_config, list(self.endpoint_configs.values())
         )
         self.__threading_call__(self._describe_domain, self.sagemaker_domains)
@@ -65,6 +70,9 @@ class SageMaker(AWSService):
         )
         self.__threading_call__(
             self._list_tags_for_resource, self.sagemaker_processing_jobs
+        )
+        self.__threading_call__(
+            self._list_tags_for_resource, self.sagemaker_transform_jobs
         )
         self.__threading_call__(
             self._list_tags_for_resource, list(self.endpoint_configs.values())
@@ -203,6 +211,74 @@ class SageMaker(AWSService):
                 f"{processing_job.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
             )
 
+    def _list_transform_jobs(self, regional_client):
+        """List SageMaker batch transform jobs in a region.
+
+        Populates ``self.sagemaker_transform_jobs`` with `TransformJob` entries.
+
+        Args:
+            regional_client: Regional SageMaker boto3 client.
+        """
+        logger.info("SageMaker - listing transform jobs...")
+        try:
+            list_transform_jobs_paginator = regional_client.get_paginator(
+                "list_transform_jobs"
+            )
+            for page in list_transform_jobs_paginator.paginate():
+                for transform_job in page["TransformJobSummaries"]:
+                    if not self.audit_resources or (
+                        is_resource_filtered(
+                            transform_job["TransformJobArn"], self.audit_resources
+                        )
+                    ):
+                        self.sagemaker_transform_jobs.append(
+                            TransformJob(
+                                name=transform_job["TransformJobName"],
+                                region=regional_client.region,
+                                arn=transform_job["TransformJobArn"],
+                            )
+                        )
+        except Exception as error:
+            logger.error(
+                f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+            )
+
+    def _describe_transform_job(self, transform_job):
+        """Describe a SageMaker transform job and read its encryption keys.
+
+        Stores ``TransformResources.InstanceType`` on
+        ``transform_job.instance_type``, ``TransformResources.VolumeKmsKeyId`` on
+        ``transform_job.volume_kms_key_id`` and ``TransformOutput.KmsKeyId`` on
+        ``transform_job.output_kms_key_id``. A describe failure, a response missing
+        either of the two structures `CreateTransformJob` requires, and a
+        ``TransformResources`` without the ``InstanceType`` the shape marks required
+        all set ``transform_job.encryption_config_scan_failed`` to True so the
+        consuming check reports ``MANUAL`` instead of a false ``FAIL``.
+
+        Args:
+            transform_job: TransformJob model to enrich in-place.
+        """
+        logger.info("SageMaker - describing transform job...")
+        try:
+            regional_client = self.regional_clients[transform_job.region]
+            describe_transform_job = regional_client.describe_transform_job(
+                TransformJobName=transform_job.name
+            )
+            transform_resources = describe_transform_job["TransformResources"]
+            # Indexed, not .get(): InstanceType is a required member, and the check
+            # cannot decide whether the volume takes a KMS key without it, so an
+            # absent one must route to MANUAL rather than to its falsy default.
+            transform_job.instance_type = transform_resources["InstanceType"]
+            transform_job.volume_kms_key_id = transform_resources.get("VolumeKmsKeyId")
+            transform_job.output_kms_key_id = describe_transform_job[
+                "TransformOutput"
+            ].get("KmsKeyId")
+        except Exception as error:
+            transform_job.encryption_config_scan_failed = True
+            logger.error(
+                f"{transform_job.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+            )
+
     def _describe_notebook_instance(self, notebook_instance):
         logger.info("SageMaker - describing notebook instances...")
         try:
@@ -305,12 +381,29 @@ class SageMaker(AWSService):
             )
 
     def _describe_training_job(self, training_job):
+        """Describe a SageMaker training job.
+
+        Besides the volume, network and VPC settings, reads
+        ``OutputDataConfig.KmsKeyId`` into ``training_job.output_kms_key_id``.
+        Any describe failure, or a response without ``OutputDataConfig``, sets
+        ``training_job.output_config_scan_failed`` to True so the consuming
+        check reports ``MANUAL`` instead of a false ``FAIL``.
+
+        Args:
+            training_job: TrainingJob model to enrich in-place.
+        """
         logger.info("SageMaker - describing training jobs...")
         try:
             regional_client = self.regional_clients[training_job.region]
             describe_training_job = regional_client.describe_training_job(
                 TrainingJobName=training_job.name
             )
+            if "OutputDataConfig" in describe_training_job:
+                training_job.output_kms_key_id = describe_training_job[
+                    "OutputDataConfig"
+                ].get("KmsKeyId")
+            else:
+                training_job.output_config_scan_failed = True
             if "EnableInterContainerTrafficEncryption" in describe_training_job:
                 training_job.container_traffic_encryption = describe_training_job[
                     "EnableInterContainerTrafficEncryption"
@@ -334,8 +427,9 @@ class SageMaker(AWSService):
                     "Subnets"
                 ]
         except Exception as error:
+            training_job.output_config_scan_failed = True
             logger.error(
-                f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                f"{training_job.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
             )
 
     def _list_model_package_groups(self, regional_client):
@@ -484,12 +578,33 @@ class SageMaker(AWSService):
             )
 
     def _describe_endpoint_config(self, endpoint_config):
+        """Describe a SageMaker endpoint configuration.
+
+        Besides the production variants and the KMS key, resolves whether
+        inference data capture is on into ``endpoint_config.data_capture_enabled``.
+        ``DataCaptureConfig`` is absent when capture was never configured, which
+        is a definite "not capturing"; within a present ``DataCaptureConfig`` an
+        absent ``EnableCapture`` means enabled, which is the API default
+        documented on the field. Any describe failure sets
+        ``endpoint_config.data_capture_scan_failed`` to True so the consuming
+        check reports ``MANUAL`` instead of a false ``FAIL``.
+
+        Args:
+            endpoint_config: EndpointConfig model to enrich in-place.
+        """
         logger.info("SageMaker - describing endpoint configs...")
         try:
             regional_client = self.regional_clients[endpoint_config.region]
             describe_endpoint_config = regional_client.describe_endpoint_config(
                 EndpointConfigName=endpoint_config.name
             )
+            data_capture_config = describe_endpoint_config.get("DataCaptureConfig")
+            if data_capture_config is None:
+                endpoint_config.data_capture_enabled = False
+            else:
+                endpoint_config.data_capture_enabled = data_capture_config.get(
+                    "EnableCapture", True
+                )
             production_variants = []
             for production_variant in describe_endpoint_config["ProductionVariants"]:
                 production_variants.append(
@@ -504,8 +619,10 @@ class SageMaker(AWSService):
             if "KmsKeyId" in describe_endpoint_config:
                 endpoint_config.kms_key_id = describe_endpoint_config["KmsKeyId"]
         except Exception as error:
+            endpoint_config.data_capture_enabled = None
+            endpoint_config.data_capture_scan_failed = True
             logger.error(
-                f"{regional_client.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
+                f"{endpoint_config.region} -- {error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
             )
 
     def _list_monitoring_schedules(self, regional_client):
@@ -585,6 +702,11 @@ class TrainingJob(BaseModel):
     volume_kms_key_id: str = None
     network_isolation: bool = None
     vpc_config_subnets: list[str] = []
+    # KMS key from OutputDataConfig.KmsKeyId, populated by _describe_training_job.
+    output_kms_key_id: Optional[str] = None
+    # True if OutputDataConfig could not be read, so the output encryption check
+    # reports MANUAL instead of a false FAIL.
+    output_config_scan_failed: bool = False
     tags: Optional[list] = []
 
 
@@ -604,6 +726,38 @@ class ProcessingJob(BaseModel):
     region: str
     arn: str
     image_uri: Optional[str] = None
+    tags: Optional[list] = []
+
+
+class TransformJob(BaseModel):
+    """Represents a SageMaker batch transform job.
+
+    Attributes:
+        name: Transform job name.
+        region: AWS region where the job lives.
+        arn: Transform job ARN.
+        instance_type: ML compute instance type from
+            `TransformResources.InstanceType`, populated by
+            `_describe_transform_job`. The encryption check needs it because
+            SageMaker AI rejects a VolumeKmsKeyId on instance types with local
+            storage.
+        volume_kms_key_id: KMS key from `TransformResources.VolumeKmsKeyId`,
+            populated by `_describe_transform_job`.
+        output_kms_key_id: KMS key from `TransformOutput.KmsKeyId`, populated by
+            `_describe_transform_job`.
+        encryption_config_scan_failed: True if the job's encryption configuration
+            could not be read, so the encryption check reports MANUAL instead of a
+            false FAIL.
+        tags: Resource tags, populated by `_list_tags_for_resource`.
+    """
+
+    name: str
+    region: str
+    arn: str
+    instance_type: Optional[str] = None
+    volume_kms_key_id: Optional[str] = None
+    output_kms_key_id: Optional[str] = None
+    encryption_config_scan_failed: bool = False
     tags: Optional[list] = []
 
 
@@ -629,6 +783,12 @@ class EndpointConfig(BaseModel):
     arn: str
     production_variants: list[ProductionVariant] = []
     kms_key_id: Optional[str] = None
+    # Resolved DataCaptureConfig state: True capturing, False not capturing,
+    # None unknown. Populated by _describe_endpoint_config.
+    data_capture_enabled: Optional[bool] = None
+    # True if DescribeEndpointConfig failed, so the data capture check reports
+    # MANUAL instead of a false FAIL.
+    data_capture_scan_failed: bool = False
     tags: Optional[list] = []
 
 
