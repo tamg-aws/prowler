@@ -1,0 +1,40 @@
+{
+  "Provider": "aws",
+  "CheckID": "wafv2_webacl_anti_ddos_rule_group_attached",
+  "CheckTitle": "AWS WAFv2 Web ACL uses the AWS anti-DDoS managed rule group in enforcing mode",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices"
+  ],
+  "ServiceName": "wafv2",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "AwsWafv2WebAcl",
+  "ResourceGroup": "security",
+  "Description": "**AWS WAFv2 web ACLs** are evaluated for the `AWSManagedRulesAntiDDoSRuleSet` managed rule group, in enforcing rather than `Count` mode. That group challenges and blocks application-layer (Layer 7) DDoS traffic. Without it a web ACL falls back to the always-on baseline mitigation, which does not challenge HTTP floods.",
+  "Risk": "An internet-facing AI endpoint left on baseline DDoS mitigation absorbs Layer 7 floods in full. Inference requests are costly per call, so a flood degrades **availability** for real users and inflates spend long before the baseline reacts. Attaching the group but overriding it to `Count` is worse than it looks: attack traffic is labelled, then served.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/waf/latest/developerguide/waf-managed-protections.html",
+    "https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-list.html",
+    "https://docs.aws.amazon.com/waf/latest/developerguide/web-acl-rule-group-override-options.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "# UpdateWebACL replaces the whole rule list, so read the current rules and lock token first:\naws wafv2 get-web-acl --name <web_acl_name> --scope REGIONAL --id <web_acl_id> --query '{LockToken:LockToken,Rules:WebACL.Rules}'\n# Then resubmit the existing rules plus the anti-DDoS rule group, keeping OverrideAction None so the group enforces:\naws wafv2 update-web-acl --name <web_acl_name> --scope REGIONAL --id <web_acl_id> --lock-token <lock_token> --default-action '{\"Allow\":{}}' --visibility-config '{\"SampledRequestsEnabled\":true,\"CloudWatchMetricsEnabled\":true,\"MetricName\":\"<web_acl_name>\"}' --rules '[{\"Name\":\"AWS-AWSManagedRulesAntiDDoSRuleSet\",\"Priority\":0,\"Statement\":{\"ManagedRuleGroupStatement\":{\"VendorName\":\"AWS\",\"Name\":\"AWSManagedRulesAntiDDoSRuleSet\",\"ManagedRuleGroupConfigs\":[{\"AWSManagedRulesAntiDDoSRuleSet\":{\"ClientSideActionConfig\":{\"Challenge\":{\"UsageOfAction\":\"ENABLED\",\"Sensitivity\":\"HIGH\"}},\"SensitivityToBlock\":\"HIGH\"}}]}},\"OverrideAction\":{\"None\":{}},\"VisibilityConfig\":{\"SampledRequestsEnabled\":true,\"CloudWatchMetricsEnabled\":true,\"MetricName\":\"AWS-AWSManagedRulesAntiDDoSRuleSet\"}}]'",
+      "NativeIaC": "```yaml\n# CloudFormation: attach the anti-DDoS managed rule group in enforcing mode\nResources:\n  <example_resource_name>:\n    Type: AWS::WAFv2::WebACL\n    Properties:\n      Scope: REGIONAL\n      DefaultAction:\n        Allow: {}\n      VisibilityConfig:\n        SampledRequestsEnabled: true\n        CloudWatchMetricsEnabled: true\n        MetricName: <example_resource_name>\n      Rules:\n        - Name: AWS-AWSManagedRulesAntiDDoSRuleSet\n          Priority: 0\n          Statement:\n            ManagedRuleGroupStatement:\n              VendorName: AWS\n              Name: AWSManagedRulesAntiDDoSRuleSet\n              ManagedRuleGroupConfigs:\n                - AWSManagedRulesAntiDDoSRuleSet:\n                    ClientSideActionConfig:\n                      Challenge:\n                        UsageOfAction: ENABLED\n                        Sensitivity: HIGH\n                    SensitivityToBlock: HIGH\n          OverrideAction:\n            None: {}  # CRITICAL: 'Count' would label DDoS traffic without challenging or blocking it\n          VisibilityConfig:\n            SampledRequestsEnabled: true\n            CloudWatchMetricsEnabled: true\n            MetricName: AWS-AWSManagedRulesAntiDDoSRuleSet\n```",
+      "Other": "1. In the AWS Console, go to AWS WAF and open Web ACLs\n2. Select the web ACL that fronts the AI endpoint and open the Rules tab\n3. Choose Add rules, then Add managed rule groups\n4. Under AWS managed rule groups, enable Anti-DDoS rule set and choose Edit\n5. Set the client-side action Challenge to Enabled and pick a sensitivity, then confirm that Override rule group action to Count is NOT selected\n6. Save the rule and then save the Web ACL\n7. Deploy the AWS WAF JavaScript or mobile SDK on clients so silent challenges can be answered, and exempt non-browser URI paths that cannot answer one",
+      "Terraform": "```hcl\n# Terraform: attach the anti-DDoS managed rule group in enforcing mode\nresource \"aws_wafv2_web_acl\" \"<example_resource_name>\" {\n  name  = \"<example_resource_name>\"\n  scope = \"REGIONAL\"\n\n  default_action {\n    allow {}\n  }\n\n  visibility_config {\n    cloudwatch_metrics_enabled = true\n    metric_name                = \"<example_resource_name>\"\n    sampled_requests_enabled   = true\n  }\n\n  rule {\n    name     = \"AWS-AWSManagedRulesAntiDDoSRuleSet\"\n    priority = 0\n\n    override_action { none {} } # CRITICAL: 'count' would label DDoS traffic without challenging or blocking it\n\n    statement {\n      managed_rule_group_statement {\n        name        = \"AWSManagedRulesAntiDDoSRuleSet\"\n        vendor_name = \"AWS\"\n\n        managed_rule_group_configs {\n          aws_managed_rules_anti_ddos_rule_set {\n            sensitivity_to_block = \"HIGH\"\n\n            client_side_action_config {\n              challenge {\n                usage_of_action = \"ENABLED\"\n                sensitivity     = \"HIGH\"\n              }\n            }\n          }\n        }\n      }\n    }\n\n    visibility_config {\n      cloudwatch_metrics_enabled = true\n      metric_name                = \"AWS-AWSManagedRulesAntiDDoSRuleSet\"\n      sampled_requests_enabled   = true\n    }\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Attach the AWSManagedRulesAntiDDoSRuleSet managed rule group to every web ACL fronting an internet-facing AI endpoint, and leave OverrideAction as None so its Challenge and Block actions apply. Deploy the AWS WAF client-side SDK so legitimate clients can answer silent challenges, and exempt URI paths that cannot. The group costs 50 WCUs and bills as intelligent threat mitigation.",
+      "Url": "https://hub.prowler.com/check/wafv2_webacl_anti_ddos_rule_group_attached"
+    }
+  },
+  "Categories": [
+    "internet-exposed"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "Only the AWSManagedRulesAntiDDoSRuleSet group is asserted. WebACL.OnSourceDDoSProtectionConfig.ALBLowReputationMode is a separate mechanism, is ALB-only, and its default ACTIVE_UNDER_DDOS is itself baseline protection, so it is not read here. Per-rule RuleActionOverrides inside the group are not evaluated, because proving all three of its rules were overridden to Count would require DescribeManagedRuleGroup. Web ACLs whose rules could not be read are reported MANUAL."
+}

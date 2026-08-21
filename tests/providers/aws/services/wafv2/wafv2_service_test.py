@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+import botocore
 from boto3 import client, resource
 from moto import mock_aws
 
@@ -7,6 +10,95 @@ from tests.providers.aws.utils import (
     AWS_REGION_US_EAST_1,
     set_mocked_aws_provider,
 )
+
+# Original botocore _make_api_call function
+orig = botocore.client.BaseClient._make_api_call
+
+UNREADABLE_ACL_NAME = "unreadable-web-acl"
+UNREADABLE_ACL_ARN = (
+    "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/unreadable-web-acl"
+)
+FM_ACL_NAME = "firewall-manager-web-acl"
+FM_ACL_ARN = (
+    "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/firewall-manager-web-acl"
+)
+VISIBILITY = {
+    "SampledRequestsEnabled": True,
+    "CloudWatchMetricsEnabled": True,
+    "MetricName": "web-acl-test-metric",
+}
+
+
+def mock_make_api_call_firewall_manager_anti_ddos(self, operation_name, kwarg):
+    """Firewall Manager pushes rule groups outside WebACL.Rules and moto cannot create them."""
+    if operation_name == "ListWebACLs":
+        return {
+            "WebACLs": [{"Name": FM_ACL_NAME, "Id": FM_ACL_NAME, "ARN": FM_ACL_ARN}]
+        }
+    if operation_name == "GetWebACL":
+        return {
+            "WebACL": {
+                "Name": FM_ACL_NAME,
+                "Id": FM_ACL_NAME,
+                "ARN": FM_ACL_ARN,
+                "DefaultAction": {"Allow": {}},
+                "PreProcessFirewallManagerRuleGroups": [
+                    {
+                        "Name": "fm-anti-ddos",
+                        "Priority": 1,
+                        "FirewallManagerStatement": {
+                            "ManagedRuleGroupStatement": {
+                                "VendorName": "AWS",
+                                "Name": "AWSManagedRulesAntiDDoSRuleSet",
+                            }
+                        },
+                        "OverrideAction": {"None": {}},
+                        "VisibilityConfig": VISIBILITY,
+                    }
+                ],
+            }
+        }
+    return orig(self, operation_name, kwarg)
+
+
+def mock_make_api_call_get_web_acl_denied(self, operation_name, kwarg):
+    if operation_name == "ListWebACLs":
+        return {
+            "WebACLs": [
+                {
+                    "Name": UNREADABLE_ACL_NAME,
+                    "Id": UNREADABLE_ACL_NAME,
+                    "ARN": UNREADABLE_ACL_ARN,
+                }
+            ]
+        }
+    if operation_name == "GetWebACL":
+        raise botocore.exceptions.ClientError(
+            {
+                "Error": {
+                    "Code": "AccessDeniedException",
+                    "Message": "User is not authorized to perform wafv2:GetWebACL",
+                }
+            },
+            operation_name,
+        )
+    return orig(self, operation_name, kwarg)
+
+
+def mock_make_api_call_get_web_acl_empty_response(self, operation_name, kwarg):
+    if operation_name == "ListWebACLs":
+        return {
+            "WebACLs": [
+                {
+                    "Name": UNREADABLE_ACL_NAME,
+                    "Id": UNREADABLE_ACL_NAME,
+                    "ARN": UNREADABLE_ACL_ARN,
+                }
+            ]
+        }
+    if operation_name == "GetWebACL":
+        return {"LockToken": "0e2b9f7a-0000-0000-0000-1f4e6c8d5a3b"}
+    return orig(self, operation_name, kwarg)
 
 
 class Test_WAFv2_Service:
@@ -307,3 +399,120 @@ class Test_WAFv2_Service:
         assert rules["overridden-rule-group"].action is None
         assert rules["overridden-rule-group"].override_action_count
         assert not rules["overridden-rule-group"].is_enforcing
+
+    @mock_aws
+    def test_get_web_acl_managed_rule_group_identity(self):
+        wafv2 = client("wafv2", region_name=AWS_REGION_EU_WEST_1)
+        waf = wafv2.create_web_acl(
+            Scope="REGIONAL",
+            Name="my-web-acl",
+            DefaultAction={"Allow": {}},
+            Rules=[
+                {
+                    "Name": "anti-ddos",
+                    "Priority": 1,
+                    "Statement": {
+                        "ManagedRuleGroupStatement": {
+                            "VendorName": "AWS",
+                            "Name": "AWSManagedRulesAntiDDoSRuleSet",
+                            "ManagedRuleGroupConfigs": [
+                                {
+                                    "AWSManagedRulesAntiDDoSRuleSet": {
+                                        "ClientSideActionConfig": {
+                                            "Challenge": {"UsageOfAction": "ENABLED"}
+                                        },
+                                        "SensitivityToBlock": "HIGH",
+                                    }
+                                }
+                            ],
+                        }
+                    },
+                    "OverrideAction": {"None": {}},
+                    "VisibilityConfig": VISIBILITY,
+                },
+                {
+                    "Name": "byte-match",
+                    "Priority": 2,
+                    "Statement": {
+                        "ByteMatchStatement": {
+                            "SearchString": "test",
+                            "FieldToMatch": {"UriPath": {}},
+                            "TextTransformations": [{"Type": "NONE", "Priority": 0}],
+                            "PositionalConstraint": "CONTAINS",
+                        }
+                    },
+                    "Action": {"Block": {}},
+                    "VisibilityConfig": VISIBILITY,
+                },
+            ],
+            VisibilityConfig=VISIBILITY,
+        )["Summary"]
+
+        aws = set_mocked_aws_provider([AWS_REGION_EU_WEST_1])
+        wafv2 = WAFv2(aws)
+
+        web_acl = wafv2.web_acls[waf["ARN"]]
+        assert web_acl.rules_retrieved is True
+        rules = {rule.name: rule for rule in web_acl.rules}
+
+        assert rules["anti-ddos"].managed_rule_group_vendor == "AWS"
+        assert (
+            rules["anti-ddos"].managed_rule_group_name
+            == "AWSManagedRulesAntiDDoSRuleSet"
+        )
+        assert rules["anti-ddos"].is_enforcing
+
+        # A statement that is not a ManagedRuleGroupStatement leaves both fields unset.
+        assert rules["byte-match"].managed_rule_group_vendor is None
+        assert rules["byte-match"].managed_rule_group_name is None
+
+    @patch(
+        "botocore.client.BaseClient._make_api_call",
+        new=mock_make_api_call_firewall_manager_anti_ddos,
+    )
+    @mock_aws
+    def test_get_web_acl_firewall_manager_managed_rule_group_identity(self):
+        aws = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
+        wafv2 = WAFv2(aws)
+
+        web_acl = wafv2.web_acls[FM_ACL_ARN]
+        assert web_acl.rules_retrieved is True
+        assert web_acl.rules == []
+        rule_groups = {rule.name: rule for rule in web_acl.rule_groups}
+
+        assert rule_groups["fm-anti-ddos"].managed_rule_group_vendor == "AWS"
+        assert (
+            rule_groups["fm-anti-ddos"].managed_rule_group_name
+            == "AWSManagedRulesAntiDDoSRuleSet"
+        )
+        assert not rule_groups["fm-anti-ddos"].override_action_count
+        assert rule_groups["fm-anti-ddos"].is_enforcing
+
+    @patch(
+        "botocore.client.BaseClient._make_api_call",
+        new=mock_make_api_call_get_web_acl_denied,
+    )
+    @mock_aws
+    def test_get_web_acl_denied_leaves_rules_unretrieved(self):
+        """A denied GetWebACL must not look like a web ACL with zero rules."""
+        aws = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
+        wafv2 = WAFv2(aws)
+
+        web_acl = wafv2.web_acls[UNREADABLE_ACL_ARN]
+        assert web_acl.rules_retrieved is None
+        assert web_acl.rules == []
+        assert web_acl.rule_groups == []
+
+    @patch(
+        "botocore.client.BaseClient._make_api_call",
+        new=mock_make_api_call_get_web_acl_empty_response,
+    )
+    @mock_aws
+    def test_get_web_acl_without_webacl_structure_leaves_rules_unretrieved(self):
+        """A GetWebACL response carrying no WebACL structure says nothing about the rules."""
+        aws = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
+        wafv2 = WAFv2(aws)
+
+        web_acl = wafv2.web_acls[UNREADABLE_ACL_ARN]
+        assert web_acl.rules_retrieved is None
+        assert web_acl.rules == []

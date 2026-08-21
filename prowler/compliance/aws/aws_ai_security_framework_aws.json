@@ -58,6 +58,7 @@
       "Checks": [
         "wafv2_webacl_with_rules",
         "wafv2_webacl_rules_not_count_only",
+        "wafv2_webacl_anti_ddos_rule_group_attached",
         "wafv2_webacl_logging_enabled",
         "wafv2_webacl_rule_logging_enabled",
         "apigateway_restapi_waf_acl_attached",

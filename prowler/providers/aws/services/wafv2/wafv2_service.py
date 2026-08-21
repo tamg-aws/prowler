@@ -140,6 +140,9 @@ class WAFv2(AWSService):
 
                     rules = get_web_acl.get("WebACL", {}).get("Rules", [])
                     for rule in rules:
+                        managed_rule_group = rule.get("Statement", {}).get(
+                            "ManagedRuleGroupStatement", {}
+                        )
                         new_rule = Rule(
                             name=rule.get("Name", ""),
                             cloudwatch_metrics_enabled=rule.get(
@@ -153,6 +156,10 @@ class WAFv2(AWSService):
                                 "Count"
                             )
                             is not None,
+                            managed_rule_group_vendor=managed_rule_group.get(
+                                "VendorName"
+                            ),
+                            managed_rule_group_name=managed_rule_group.get("Name"),
                         )
                         if (
                             rule.get("Statement", {})
@@ -170,6 +177,9 @@ class WAFv2(AWSService):
                     )
 
                     for rule in firewall_manager_managed_rg:
+                        managed_rule_group = rule.get(
+                            "FirewallManagerStatement", {}
+                        ).get("ManagedRuleGroupStatement", {})
                         acl.rule_groups.append(
                             Rule(
                                 name=rule.get("Name", ""),
@@ -180,8 +190,18 @@ class WAFv2(AWSService):
                                     "OverrideAction", {}
                                 ).get("Count")
                                 is not None,
+                                managed_rule_group_vendor=managed_rule_group.get(
+                                    "VendorName"
+                                ),
+                                managed_rule_group_name=managed_rule_group.get("Name"),
                             )
                         )
+
+                    # Only now is the rule inventory known to be complete. Anything that leaves
+                    # this unset -- a failed GetWebACL, a response without the WebACL structure,
+                    # a parse error above -- means the rules are unknown rather than absent.
+                    if get_web_acl.get("WebACL"):
+                        acl.rules_retrieved = True
 
                 except Exception as error:
                     logger.error(
@@ -231,6 +251,12 @@ class Rule(BaseModel):
     # OverrideAction.Count overrides the whole referenced rule group to count-only, so the group
     # inspects requests but never blocks them.
     override_action_count: bool = False
+    # Vendor and name of the managed rule group this rule runs, when its statement is a
+    # ManagedRuleGroupStatement. The WAFv2 API forbids nesting such a statement -- "You can only
+    # reference a managed rule group as a top-level statement within a rule that you define in a
+    # web ACL" -- so it is never reachable below the rule's own Statement.
+    managed_rule_group_vendor: Optional[str] = None
+    managed_rule_group_name: Optional[str] = None
 
     @property
     def is_enforcing(self) -> bool:
@@ -255,3 +281,6 @@ class WebAclv2(BaseModel):
     rules: list[Rule] = []
     rule_groups: list[Rule] = []
     default_action_block: bool = False
+    # None while GetWebACL has not returned a rule inventory, so that checks can tell an empty
+    # rule set apart from one that could not be read.
+    rules_retrieved: Optional[bool] = None
