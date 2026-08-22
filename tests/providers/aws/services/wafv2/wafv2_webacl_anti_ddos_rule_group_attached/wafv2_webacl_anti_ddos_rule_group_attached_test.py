@@ -302,6 +302,44 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
             assert result[0].resource_arn == waf["ARN"]
 
     @mock_aws
+    def test_one_enforcing_anti_ddos_group_among_counted_ones_passes(self):
+        """Two references to the group, one enforcing: PASS.
+
+        A web ACL can carry the anti-DDoS group twice -- typically one enforcing copy plus
+        a second being tuned in Count. The check uses any(), not all(): one enforcing copy
+        is sufficient protection. Under all() this configuration reports a false FAIL, and
+        no other fixture here gives a single web ACL two anti-DDoS references.
+        """
+        waf = _create_web_acl(
+            "test-anti-ddos-mixed",
+            [
+                _managed_rule_group_rule("anti-ddos-tuning", 1, {"Count": {}}),
+                _managed_rule_group_rule("anti-ddos-live", 2, {"None": {}}),
+            ],
+        )
+
+        from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
+
+        aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
+
+        with (
+            mock.patch(
+                "prowler.providers.common.provider.Provider.get_global_provider",
+                return_value=aws_provider,
+            ),
+            mock.patch(CHECK_PATH, new=WAFv2(aws_provider)),
+        ):
+            from prowler.providers.aws.services.wafv2.wafv2_webacl_anti_ddos_rule_group_attached.wafv2_webacl_anti_ddos_rule_group_attached import (
+                wafv2_webacl_anti_ddos_rule_group_attached,
+            )
+
+            result = wafv2_webacl_anti_ddos_rule_group_attached().execute()
+
+            assert len(result) == 1
+            assert result[0].status == "PASS"
+            assert result[0].resource_id == waf["Id"]
+
+    @mock_aws
     def test_other_managed_rule_group_only(self):
         waf = _create_web_acl(
             "test-common-rule-set-only",
