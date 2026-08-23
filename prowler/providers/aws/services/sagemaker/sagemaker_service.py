@@ -223,11 +223,13 @@ class SageMaker(AWSService):
                 notebook_instance.root_access = True
             if "SubnetId" in describe_notebook_instance:
                 notebook_instance.subnet_id = describe_notebook_instance["SubnetId"]
-            if (
-                "DirectInternetAccess" in describe_notebook_instance
-                and describe_notebook_instance["DirectInternetAccess"] == "Enabled"
-            ):
-                notebook_instance.direct_internet_access = True
+            if "DirectInternetAccess" in describe_notebook_instance:
+                # Assign both states, not just the enabled one. Left as None, "Disabled"
+                # and "the field was never read" are the same value, and the check
+                # defaults to PASS -- so an unreadable notebook instance reported clean.
+                notebook_instance.direct_internet_access = (
+                    describe_notebook_instance["DirectInternetAccess"] == "Enabled"
+                )
             if "KmsKeyId" in describe_notebook_instance:
                 notebook_instance.kms_key_id = describe_notebook_instance["KmsKeyId"]
             if "NotebookInstanceLifecycleConfigName" in describe_notebook_instance:
@@ -553,7 +555,8 @@ class NotebookInstance(BaseModel):
     arn: str
     root_access: bool = None
     subnet_id: str = None
-    direct_internet_access: bool = None
+    # None when DescribeNotebookInstance did not report the field: unknown, not disabled.
+    direct_internet_access: Optional[bool] = None
     kms_key_id: str = None
     lifecycle_config_name: str = None
     # Decoded lifecycle scripts keyed by "<hook>[<index>]" (e.g. "OnStart[0]"),

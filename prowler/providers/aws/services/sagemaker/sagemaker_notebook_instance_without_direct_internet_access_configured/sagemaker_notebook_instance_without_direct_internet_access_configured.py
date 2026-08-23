@@ -11,7 +11,13 @@ class sagemaker_notebook_instance_without_direct_internet_access_configured(Chec
             )
             report.status = "PASS"
             report.status_extended = f"Sagemaker notebook instance {notebook_instance.name} has direct internet access disabled."
-            if notebook_instance.direct_internet_access:
+            if notebook_instance.direct_internet_access is None:
+                # DescribeNotebookInstance did not report DirectInternetAccess, so the
+                # setting is unknown. Defaulting to PASS would report an unread instance
+                # as compliant.
+                report.status = "MANUAL"
+                report.status_extended = f"Sagemaker notebook instance {notebook_instance.name} did not report DirectInternetAccess, so it could not be determined; verify manually."
+            elif notebook_instance.direct_internet_access:
                 report.status = "FAIL"
                 report.status_extended = f"Sagemaker notebook instance {notebook_instance.name} has direct internet access enabled."
 
