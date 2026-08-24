@@ -12,7 +12,7 @@
   "ResourceType": "AwsWafv2WebAcl",
   "ResourceGroup": "security",
   "Description": "**AWS WAFv2 web ACLs** are evaluated for the `AWSManagedRulesAntiDDoSRuleSet` managed rule group, in enforcing rather than `Count` mode. That group challenges and blocks application-layer (Layer 7) DDoS traffic. Without it a web ACL falls back to the always-on baseline mitigation, which does not challenge HTTP floods.",
-  "Risk": "An internet-facing AI endpoint left on baseline DDoS mitigation absorbs Layer 7 floods in full. Inference requests are costly per call, so a flood degrades **availability** for real users and inflates spend long before the baseline reacts. Attaching the group but overriding it to `Count` is worse than it looks: attack traffic is labelled, then served.",
+  "Risk": "An internet-facing AI endpoint on baseline DDoS mitigation absorbs **Layer 7 floods** in full. Inference is costly per call, so a flood degrades **availability** and inflates spend long before the baseline reacts.\n\nAttaching the group but overriding it to `Count` is worse than not attaching it, because the configuration looks protective.",
   "RelatedUrl": "",
   "AdditionalURLs": [
     "https://docs.aws.amazon.com/waf/latest/developerguide/waf-managed-protections.html",
