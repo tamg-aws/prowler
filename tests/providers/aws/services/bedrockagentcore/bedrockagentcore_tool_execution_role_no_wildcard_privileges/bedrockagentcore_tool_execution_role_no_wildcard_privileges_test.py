@@ -240,7 +240,13 @@ class Test_bedrockagentcore_tool_execution_role_no_wildcard_privileges:
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
     @mock_aws
     def test_admin_inline_policy_fails(self):
-        """Action:* on Resource:* is administrative access."""
+        """Action:* on Resource:* is administrative access.
+
+        The FAIL sentence claims only what was measured. Documents are evaluated one at a time and
+        never aggregated, so the wording is "has an attached or inline policy granting" rather than
+        "grants": effective permission is the union of the Allows minus the union of the Denies, and
+        a blanket Deny elsewhere on the role would not be seen here.
+        """
         result = self._run(
             roles=[_Role(inline_policies=["admin"])],
             policies={f"{ROLE_ARN}:policy/admin": _Policy(ADMIN_DOC)},
@@ -248,6 +254,10 @@ class Test_bedrockagentcore_tool_execution_role_no_wildcard_privileges:
         assert len(result) == 1
         assert result[0].status == "FAIL"
         assert "administrative access" in result[0].status_extended
+        assert (
+            "execution role has an attached or inline policy granting wildcard privileges"
+            in result[0].status_extended
+        )
 
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
     @mock_aws

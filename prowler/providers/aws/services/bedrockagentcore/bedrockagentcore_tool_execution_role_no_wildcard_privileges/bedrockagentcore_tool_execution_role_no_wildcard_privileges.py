@@ -40,8 +40,12 @@ class bedrockagentcore_tool_execution_role_no_wildcard_privileges(Check):
 
     - PASS: The tool's execution role grants none of the above, and every one of
       its policy documents could be read.
-    - FAIL: The role grants at least one. A grant that was read is definite, so
-      FAIL stands even if another document could not be retrieved.
+    - FAIL: At least one of the role's attached or inline policies grants one of the
+      above. Each document is evaluated on its own and they are not aggregated, so
+      this is a property of a policy on the role and not of the role's effective
+      permissions, which are the union of the Allows minus the union of the Denies.
+      A grant that was read is definite, so FAIL stands even if another document
+      could not be retrieved.
     - MANUAL: GetCodeInterpreter or GetBrowser failed, so the tool's
       ``executionRoleArn`` is unknown and an absent value cannot be read as "no
       execution role attached"; or the tool names a role that is absent from the
@@ -187,7 +191,7 @@ class bedrockagentcore_tool_execution_role_no_wildcard_privileges(Check):
                 # stands whatever else could not be read.
                 violations.sort()
                 report.status = "FAIL"
-                report.status_extended = f"Bedrock AgentCore {tool_kind} {tool.name} execution role grants wildcard privileges in region {tool.region}: {'; '.join(violations)}."
+                report.status_extended = f"Bedrock AgentCore {tool_kind} {tool.name} execution role has an attached or inline policy granting wildcard privileges in region {tool.region}: {'; '.join(violations)}."
             elif unresolved:
                 unresolved.sort()
                 report.status = "MANUAL"
