@@ -1,0 +1,42 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_runtime_network_mode_not_public",
+  "CheckTitle": "Bedrock AgentCore agent runtime does not use public network mode",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "Software and Configuration Checks/AWS Security Best Practices/Network Security"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore agent runtimes** can run with `networkMode` set to `PUBLIC` or `VPC`. This check verifies the runtime is not left in `PUBLIC` network mode, so its outbound calls are not made directly from a shared public network path.",
+  "Risk": "An **agent runtime** with `networkMode` `PUBLIC` makes outbound calls from a shared public network path instead of the account's own VPC, removing the ability to apply VPC-level network controls (security groups, route tables, VPC endpoints) to the agent's traffic.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-network-modes.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "```bash\naws bedrock-agentcore-control update-agent-runtime --agent-runtime-id <runtime_id> --agent-runtime-artifact <existing_artifact> --role-arn <role_arn> --network-configuration '{\"networkMode\":\"VPC\",\"networkModeConfig\":{\"subnets\":[\"<subnet_id>\"],\"securityGroups\":[\"<sg_id>\"]}}'\n```",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::Runtime\n    Properties:\n      AgentRuntimeName: example_resource\n      NetworkConfiguration:\n        NetworkMode: VPC  # Critical: moves traffic into the account VPC\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Agent Runtimes** from the navigation pane\n3. Edit the agent runtime's network configuration\n4. Set network mode to VPC and choose subnets/security groups\n5. Save the agent runtime",
+      "Terraform": "```hcl\nresource \"aws_bedrockagentcore_agent_runtime\" \"example_resource\" {\n  agent_runtime_name = \"example_resource\"\n  role_arn           = aws_iam_role.example_resource.arn\n\n  agent_runtime_artifact {\n    container_configuration {\n      container_uri = \"123456789012.dkr.ecr.us-east-1.amazonaws.com/example:latest\"\n    }\n  }\n\n  network_configuration {\n    network_mode = \"VPC\" # Critical: PUBLIC exposes the runtime to the internet\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Run Bedrock AgentCore agent runtimes with `networkMode` set to `VPC` so outbound traffic traverses the account's own VPC, where security groups, route tables, and VPC endpoints can be applied.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_runtime_network_mode_not_public"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "internet-exposed"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrock_vpc_endpoints_configured"
+  ],
+  "Notes": "This check reports one finding per AgentCore agent runtime discovered via ListAgentRuntimes/GetAgentRuntime in each scanned region. A runtime whose GetAgentRuntime detail could not be retrieved returns MANUAL rather than PASS, because an absent networkMode means the answer is unknown, not that the mode is other than PUBLIC."
+}

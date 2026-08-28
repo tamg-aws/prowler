@@ -1,0 +1,41 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_jwt_authorizer_client_or_audience_restricted",
+  "CheckTitle": "Bedrock AgentCore custom JWT authorizer restricts allowed clients or audience",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "high",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore** gateways and agent runtimes can use a custom JWT authorizer. This check verifies that resources using `customJWTAuthorizer` restrict either `allowedClients` or `allowedAudience`, rather than accepting any valid token from the identity provider.",
+  "Risk": "A **custom JWT authorizer** with neither `allowedClients` nor `allowedAudience` populated accepts any validly signed token from the configured issuer, including tokens minted for unrelated applications, widening the set of callers that can invoke the resource.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-authorization.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "```bash\naws bedrock-agentcore-control update-gateway --gateway-identifier <gateway_id> --name <gateway_name> --role-arn <role_arn> --protocol-type MCP --authorizer-type CUSTOM_JWT --authorizer-configuration '{\"customJWTAuthorizer\":{\"discoveryUrl\":\"<discovery_url>\",\"allowedClients\":[\"<client_id>\"]}}'\n```",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::Gateway\n    Properties:\n      Name: example_resource\n      AuthorizerConfiguration:\n        CustomJWTAuthorizer:\n          AllowedClients: [\"example-client-id\"]  # Critical: restricts accepted tokens\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select the Gateway or Agent Runtime\n3. Edit the custom JWT authorizer configuration\n4. Populate allowed clients or allowed audience\n5. Save the resource",
+      "Terraform": "```hcl\nresource \"aws_bedrockagentcore_gateway\" \"example_resource\" {\n  name            = \"example_resource\"\n  role_arn        = aws_iam_role.example_resource.arn\n  authorizer_type = \"CUSTOM_JWT\"\n\n  authorizer_configuration {\n    custom_jwt_authorizer {\n      discovery_url = \"https://example.com/.well-known/openid-configuration\"\n      # Critical: without allowed_clients or allowed_audience any token the\n      # issuer signs is accepted, including tokens minted for other apps\n      allowed_clients = [\"example-client-id\"]\n    }\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Populate `allowedClients` or `allowedAudience` on every custom JWT authorizer so only tokens issued for the intended application are accepted, rather than any valid token from the identity provider.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_jwt_authorizer_client_or_audience_restricted"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "identity-access"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrockagentcore_runtime_inbound_authorizer_configured"
+  ],
+  "Notes": "This check only evaluates resources that use a customJWTAuthorizer; resources with AWS_IAM authorization or no authorizer are out of scope for this control. authorizerType is a required member of the ListGateways summary, so only CUSTOM_JWT gateways are evaluated and one whose GetGateway detail could not be retrieved returns MANUAL rather than FAIL, because empty allowedClients/allowedAudience lists mean the answer is unknown. ListAgentRuntimes carries no authorizer field, so a runtime whose GetAgentRuntime detail could not be retrieved cannot be shown to be out of scope and returns MANUAL rather than being skipped."
+}

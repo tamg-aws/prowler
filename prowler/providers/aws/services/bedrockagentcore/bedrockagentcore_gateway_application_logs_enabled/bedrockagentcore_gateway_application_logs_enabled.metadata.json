@@ -1,0 +1,42 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_gateway_application_logs_enabled",
+  "CheckTitle": "Bedrock AgentCore gateway delivers its application logs",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore gateways** emit an application-log call trail covering request and response bodies, the invoked tool or target, and `MCP` requests with bad authorization headers. AgentCore configures no log destination automatically, so the trail exists only once a **CloudWatch Logs** vended-log delivery for `APPLICATION_LOGS` targets the gateway ARN.",
+  "Risk": "A gateway with no **application-log** delivery keeps no record of the calls it brokers.\n\nRejected `MCP` requests, the tool or target each caller invoked, and the request and response bodies are all unrecorded, leaving no **forensic** trail to scope a **tool poisoning** or **confused deputy** incident and no way to attribute agent actions after the fact.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-gateway-metrics.html",
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html",
+    "https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutDeliverySource.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws logs put-delivery-source --name <example_resource_name>-logs-source --log-type APPLICATION_LOGS --resource-arn <gateway_arn> && aws logs put-delivery-destination --name <example_resource_name>-logs-destination --delivery-destination-type CWL --delivery-destination-configuration destinationResourceArn=<log_group_arn> && aws logs create-delivery --delivery-source-name <example_resource_name>-logs-source --delivery-destination-arn <delivery_destination_arn>",
+      "NativeIaC": "```yaml\nResources:\n  exampleDeliverySource:\n    Type: AWS::Logs::DeliverySource\n    Properties:\n      Name: example_resource-logs-source\n      LogType: APPLICATION_LOGS  # Critical: the gateway call trail\n      ResourceArn: arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/EXAMPLE123\n  exampleDeliveryDestination:\n    Type: AWS::Logs::DeliveryDestination\n    Properties:\n      Name: example_resource-logs-destination\n      DestinationResourceArn: !GetAtt exampleLogGroup.Arn\n  exampleDelivery:\n    Type: AWS::Logs::Delivery\n    Properties:\n      DeliverySourceName: !Ref exampleDeliverySource\n      DeliveryDestinationArn: !GetAtt exampleDeliveryDestination.Arn\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Gateways** from the navigation pane and choose the gateway\n3. Scroll to the **Log delivery** pane and choose **Add**\n4. Select a destination type (CloudWatch Logs group, Amazon S3 bucket, or Amazon Data Firehose)\n5. For CloudWatch Logs, accept the default destination log group or enter one beginning with /aws/vendedlogs/\n6. Choose **Add** and confirm the log delivery status shows Delivery active",
+      "Terraform": "```hcl\nresource \"aws_cloudwatch_log_delivery_source\" \"example_resource\" {\n  name = \"example_resource-logs-source\"\n  # Critical: without an APPLICATION_LOGS source the gateway call trail is never emitted\n  log_type     = \"APPLICATION_LOGS\"\n  resource_arn = aws_bedrockagentcore_gateway.example_resource.gateway_arn\n}\n\nresource \"aws_cloudwatch_log_delivery_destination\" \"example_resource\" {\n  name = \"example_resource-logs-destination\"\n\n  delivery_destination_configuration {\n    destination_resource_arn = aws_cloudwatch_log_group.example_resource.arn\n  }\n}\n\n# Critical: a delivery source with no delivery attached emits nothing\nresource \"aws_cloudwatch_log_delivery\" \"example_resource\" {\n  delivery_source_name     = aws_cloudwatch_log_delivery_source.example_resource.name\n  delivery_destination_arn = aws_cloudwatch_log_delivery_destination.example_resource.arn\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Create a CloudWatch Logs vended-log delivery for each AgentCore gateway: register an `APPLICATION_LOGS` delivery source against the gateway ARN, create a CloudWatch Logs, S3, or Firehose delivery destination, then create the delivery that links them. Set a retention period that matches your investigation window, encrypt the destination with a customer-managed KMS key, and correlate the records with the gateway spans using their `trace_id` and `span_id` fields.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_gateway_application_logs_enabled"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "forensics-ready",
+    "logging"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "This check reports one finding per AgentCore gateway discovered via ListGateways in each scanned region, so an account with no gateways produces no findings. A gateway ARN is matched against DeliverySource.resourceArns, the only field that ties a delivery source to a specific resource. A region whose delivery inventory could not be listed returns MANUAL rather than FAIL, because vended-log delivery is off by default and an unreadable inventory cannot be distinguished from a disabled one. The collector reading DescribeDeliverySources and DescribeDeliveries runs only when this check is in scope."
+}

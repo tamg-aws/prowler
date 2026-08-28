@@ -18,7 +18,8 @@
         }
       ],
       "Checks": [
-        "bedrock_vpc_endpoints_configured"
+        "bedrock_vpc_endpoints_configured",
+        "bedrockagentcore_runtime_network_mode_not_public"
       ]
     },
     {
@@ -690,7 +691,9 @@
         }
       ],
       "Checks": [
-        "bedrock_agent_role_not_shared_across_agents"
+        "bedrock_agent_role_not_shared_across_agents",
+        "bedrockagentcore_jwt_authorizer_client_or_audience_restricted",
+        "bedrockagentcore_runtime_inbound_authorizer_configured"
       ]
     },
     {
@@ -716,10 +719,12 @@
           "Section": "AI Application Security",
           "SubSection": "Agent Governance",
           "Service": "bedrock",
-          "Type": "Manual"
+          "Type": "Automated"
         }
       ],
-      "Checks": []
+      "Checks": [
+        "bedrockagentcore_gateway_application_logs_enabled"
+      ]
     },
     {
       "Id": "AISF-AGENT-04",

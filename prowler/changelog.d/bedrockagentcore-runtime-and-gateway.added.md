@@ -1,0 +1,1 @@
+`bedrockagentcore_runtime_inbound_authorizer_configured`, `bedrockagentcore_runtime_network_mode_not_public`, `bedrockagentcore_gateway_application_logs_enabled` and `bedrockagentcore_jwt_authorizer_client_or_audience_restricted` checks for AWS provider, covering AgentCore agent runtime and gateway inbound authorization, network exposure and vended-log delivery
