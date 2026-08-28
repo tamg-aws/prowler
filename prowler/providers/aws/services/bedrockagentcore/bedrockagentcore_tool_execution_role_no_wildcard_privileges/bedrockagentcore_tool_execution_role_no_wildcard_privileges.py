@@ -38,8 +38,12 @@ class bedrockagentcore_tool_execution_role_no_wildcard_privileges(Check):
     - No attached or inline policy granting administrative access, service-wide
       access to a sensitive service, or a known privilege escalation combination.
 
-    - PASS: The tool's execution role grants none of the above, and every one of
-      its policy documents could be read.
+    - PASS: No attached or inline policy of the tool's execution role individually
+      grants any of the above, and every one of its documents could be read. The
+      qualifier is load-bearing rather than cautious: a privilege escalation
+      combination needs every one of its actions inside a single document to be
+      detected, and 71 of the 101 known combinations take two or more actions, so a
+      combination split across two of the role's policies is not seen here.
     - FAIL: At least one of the role's attached or inline policies grants one of the
       above. Each document is evaluated on its own and they are not aggregated, so
       this is a property of a policy on the role and not of the role's effective
@@ -198,7 +202,7 @@ class bedrockagentcore_tool_execution_role_no_wildcard_privileges(Check):
                 report.status_extended = f"Bedrock AgentCore {tool_kind} {tool.name} execution role {role.name} has no wildcard privileges in the policies that could be read in region {tool.region}, but {', '.join(unresolved)} could not be retrieved from the IAM inventory; verify manually that it grants no administrative, service-wide, or privilege escalation access."
             else:
                 report.status = "PASS"
-                report.status_extended = f"Bedrock AgentCore {tool_kind} {tool.name} execution role does not grant wildcard privileges in region {tool.region}."
+                report.status_extended = f"Bedrock AgentCore {tool_kind} {tool.name} execution role has no attached or inline policy individually granting wildcard privileges in region {tool.region}."
 
             findings.append(report)
 

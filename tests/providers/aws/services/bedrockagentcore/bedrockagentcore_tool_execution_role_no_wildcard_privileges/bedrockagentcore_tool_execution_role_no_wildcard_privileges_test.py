@@ -55,6 +55,26 @@ SERVICE_WIDE_DOC = {
     "Version": "2012-10-17",
     "Statement": [{"Effect": "Allow", "Action": "s3:*", "Resource": "*"}],
 }
+# The four actions of the PassRole+AgentCoreCreateInterpreter+InvokeInterpreter escalation
+# combination, all in ONE document. check_privilege_escalation requires a combination's actions to
+# be a subset of a single document's effective actions, so one document is the only form it can
+# detect. Deliberately not service-wide and not Action:*, so it reaches the escalation test rather
+# than being caught by check_admin_access or check_full_service_access above it.
+ESCALATION_DOC = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "bedrock-agentcore:CreateCodeInterpreter",
+                "bedrock-agentcore:InvokeCodeInterpreter",
+                "bedrock-agentcore:StartCodeInterpreterSession",
+                "iam:PassRole",
+            ],
+            "Resource": "*",
+        }
+    ],
+}
 
 
 def _tool_mock(execution_role_arn=ROLE_ARN):
@@ -270,6 +290,45 @@ class Test_bedrockagentcore_tool_execution_role_no_wildcard_privileges:
         assert len(result) == 1
         assert result[0].status == "FAIL"
         assert "full access to s3" in result[0].status_extended
+
+    @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
+    @mock_aws
+    def test_privilege_escalation_combination_in_one_document_fails(self):
+        """A complete escalation combination inside one document must FAIL.
+
+        The document grants no service-wide access and is not Action:*, so it reaches the
+        privilege escalation test rather than the two checks above it. The combination is
+        PassRole plus the three AgentCore code interpreter actions, which is the escalation this
+        check most exists to catch: it lets sandbox code create an interpreter, pass a role to it
+        and invoke it.
+        """
+        result = self._run(
+            roles=[_Role(inline_policies=["escalation"])],
+            policies={f"{ROLE_ARN}:policy/escalation": _Policy(ESCALATION_DOC)},
+        )
+        assert len(result) == 1
+        assert result[0].status == "FAIL"
+        assert "allows privilege escalation" in result[0].status_extended
+        assert "inline policy escalation" in result[0].status_extended
+
+    @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
+    @mock_aws
+    def test_unreadable_inline_policy_document_is_manual_not_pass(self):
+        """An INLINE policy whose document could not be fetched must not read as clean.
+
+        Same reasoning as the managed-policy case, on the other branch of the same guard: an
+        inline document that did not resolve is where a wildcard grant would hide, so the role
+        cannot be called clean on the strength of the policies that did resolve.
+        """
+        result = self._run(
+            roles=[_Role(inline_policies=["missing-inline"])],
+            policies={},
+        )
+        assert len(result) == 1
+        assert result[0].status == "MANUAL"
+        assert "could not be retrieved" in result[0].status_extended
+        assert "inline policy missing-inline" in result[0].status_extended
+        assert result[0].status_extended.endswith(".")
 
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
     @mock_aws
