@@ -1,8 +1,7 @@
 from unittest import mock
 
-import pytest
-
 import botocore
+import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 

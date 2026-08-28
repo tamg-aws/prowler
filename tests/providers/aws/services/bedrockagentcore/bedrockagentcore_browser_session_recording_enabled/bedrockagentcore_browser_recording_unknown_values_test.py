@@ -8,12 +8,8 @@ tests exist to prevent.
 
 from unittest import mock
 
-
 import botocore
-
-
 from moto import mock_aws
-
 
 from tests.providers.aws.utils import (
     AWS_ACCOUNT_NUMBER,
