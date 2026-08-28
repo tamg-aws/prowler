@@ -1,0 +1,40 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_token_vault_encrypted_with_cmk",
+  "CheckTitle": "Bedrock AgentCore token vault is encrypted with a customer-managed KMS key",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "Software and Configuration Checks/AWS Security Best Practices/Data Encryption"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "The **Bedrock AgentCore token vault** stores OAuth2 and API-key credentials used by agents to call downstream tools. This check verifies the vault's `kmsConfiguration.keyType` is `CustomerManagedKey` rather than an AWS-managed key.",
+  "Risk": "A **token vault** stores the downstream-tool credentials an agent authenticates with, making it a high-value credential store.\n\nUnder an AWS managed key (`ServiceManagedKey`), the account controls neither key rotation nor a granular key policy, and cannot revoke access by disabling the key.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-token-vault.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "```bash\naws bedrock-agentcore-control set-token-vault-cmk --token-vault-id <token_vault_id> --kms-configuration keyType=CustomerManagedKey,kmsKeyArn=<kms_key_arn>\n```",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::TokenVault\n    Properties:\n      KmsConfiguration:\n        KeyType: CustomerManagedKey  # Critical: enables CMK encryption\n        KmsKeyArn: arn:aws:kms:us-east-1:123456789012:key/example-key-id\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Identity** then **Token Vault**\n3. Edit the KMS configuration\n4. Choose a customer managed KMS key\n5. Save the token vault",
+      "Terraform": "```hcl\nresource \"aws_bedrockagentcore_token_vault_cmk\" \"example_resource\" {\n  kms_configuration {\n    key_type    = \"CustomerManagedKey\" # Critical: ServiceManagedKey leaves AWS owning the key\n    kms_key_arn = aws_kms_key.example_resource.arn\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Configure the Bedrock AgentCore token vault with a customer managed KMS key so the account retains control over key rotation, access policy, and revocation for stored downstream-tool credentials.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_token_vault_encrypted_with_cmk"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "encryption"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "This check reports one finding per region where GetTokenVault succeeds; regions where the token vault cannot be retrieved are skipped to avoid false failures."
+}
