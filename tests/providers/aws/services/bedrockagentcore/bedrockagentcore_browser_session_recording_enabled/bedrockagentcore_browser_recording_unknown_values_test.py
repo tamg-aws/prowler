@@ -58,7 +58,9 @@ EMPTY = {
 
 def _build(stub):
     """Instantiate BedrockAgentCore under the given _make_api_call stub."""
-    from prowler.providers.aws.services.bedrockagentcore.bedrockagentcore_service import BedrockAgentCore
+    from prowler.providers.aws.services.bedrockagentcore.bedrockagentcore_service import (
+        BedrockAgentCore,
+    )
 
     aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
     with (
