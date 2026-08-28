@@ -40,6 +40,11 @@ def _managed_rule_group_rule(
     group: str = ANTI_DDOS,
     scope_down: dict = None,
 ) -> dict:
+    """Build a managed rule group rule, defaulting to the AWS anti-DDoS group.
+
+    `override` decides whether the group enforces or only counts. `vendor` and `group` are
+    overridable so a test can build a lookalike that must NOT be recognised as the AWS group.
+    """
     statement = {"VendorName": vendor, "Name": group}
     if scope_down:
         statement["ScopeDownStatement"] = scope_down
@@ -53,6 +58,11 @@ def _managed_rule_group_rule(
 
 
 def _byte_match_rule(name: str, priority: int, action: dict) -> dict:
+    """Build a standalone rule, whose effective action comes from its own Action.
+
+    Used to add a blocking rule that is not the anti-DDoS group, so a Web ACL can enforce something
+    and still lack anti-DDoS mitigation.
+    """
     return {
         "Name": name,
         "Priority": priority,
@@ -70,6 +80,11 @@ def _byte_match_rule(name: str, priority: int, action: dict) -> dict:
 
 
 def _create_web_acl(name: str, rules: list) -> dict:
+    """Create a REGIONAL Web ACL in moto that allows by default, and return its summary.
+
+    The default action is fixed at Allow because this check reads the rules alone, and a Name tag is
+    attached so a report's resource_tags can be asserted.
+    """
     wafv2 = client("wafv2", region_name=AWS_REGION_US_EAST_1)
     return wafv2.create_web_acl(
         Name=name,
@@ -82,6 +97,11 @@ def _create_web_acl(name: str, rules: list) -> dict:
 
 
 def _fm_response(override: dict) -> dict:
+    """Build a GetWebACL response whose only anti-DDoS group is a Firewall Manager one.
+
+    WebACL.Rules is absent entirely, so the group is reachable only through
+    PostProcessFirewallManagerRuleGroups.
+    """
     return {
         "WebACL": {
             "Name": FM_ACL_NAME,
@@ -109,6 +129,7 @@ def _fm_response(override: dict) -> dict:
 # Firewall Manager pushes rule groups outside WebACL.Rules and moto cannot create them, so a
 # stubbed GetWebACL response is the only way to exercise that path.
 def mock_make_api_call_fm_enforcing(self, operation_name, kwarg):
+    """Serve a Web ACL whose Firewall Manager anti-DDoS group is left enforcing."""
     if operation_name == "ListWebACLs":
         return {
             "WebACLs": [{"Name": FM_ACL_NAME, "Id": FM_ACL_NAME, "ARN": FM_ACL_ARN}]
@@ -119,6 +140,7 @@ def mock_make_api_call_fm_enforcing(self, operation_name, kwarg):
 
 
 def mock_make_api_call_fm_count_only(self, operation_name, kwarg):
+    """Serve a Web ACL whose Firewall Manager anti-DDoS group is overridden to Count."""
     if operation_name == "ListWebACLs":
         return {
             "WebACLs": [{"Name": FM_ACL_NAME, "Id": FM_ACL_NAME, "ARN": FM_ACL_ARN}]
@@ -129,6 +151,7 @@ def mock_make_api_call_fm_count_only(self, operation_name, kwarg):
 
 
 def mock_make_api_call_get_web_acl_denied(self, operation_name, kwarg):
+    """List one Web ACL and deny GetWebACL, so its rules are unknown rather than empty."""
     if operation_name == "ListWebACLs":
         return {
             "WebACLs": [
@@ -149,6 +172,7 @@ def mock_make_api_call_get_web_acl_denied(self, operation_name, kwarg):
 
 
 def mock_make_api_call_list_denied(self, operation_name, kwarg):
+    """Deny ListWebACLs, so no Web ACL is collected and the check has nothing to report on."""
     if operation_name == "ListWebACLs":
         raise botocore.exceptions.ClientError(
             {
@@ -165,6 +189,7 @@ def mock_make_api_call_list_denied(self, operation_name, kwarg):
 class Test_wafv2_webacl_anti_ddos_rule_group_attached:
     @mock_aws
     def test_no_web_acls(self):
+        """An account with no Web ACLs produces no reports, not a PASS for the account."""
         from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
 
         aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
@@ -186,6 +211,11 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
 
     @mock_aws
     def test_anti_ddos_rule_group_enforcing(self):
+        """The anti-DDoS group attached with OverrideAction None must PASS.
+
+        Also pins the report's identity fields -- resource id, ARN, region and tags -- which every
+        other case in this file takes for granted.
+        """
         waf = _create_web_acl(
             "test-anti-ddos-enforcing",
             [_managed_rule_group_rule("anti-ddos", 1, {"None": {}})],
@@ -341,6 +371,11 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
 
     @mock_aws
     def test_other_managed_rule_group_only(self):
+        """An enforcing AWS managed group that is not the anti-DDoS set must FAIL as absent.
+
+        Guards the group-name half of the identity test: matching on vendor alone would read
+        AWSManagedRulesCommonRuleSet as anti-DDoS mitigation.
+        """
         waf = _create_web_acl(
             "test-common-rule-set-only",
             [
@@ -444,6 +479,11 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
     )
     @mock_aws
     def test_firewall_manager_anti_ddos_rule_group_enforcing(self):
+        """An enforcing anti-DDoS group delivered by Firewall Manager must PASS.
+
+        The group never appears in WebACL.Rules, so a check reading only that list would FAIL a Web
+        ACL that a Firewall Manager policy is in fact protecting.
+        """
         from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
 
         aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
@@ -475,6 +515,11 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
     )
     @mock_aws
     def test_firewall_manager_anti_ddos_rule_group_count_only(self):
+        """A Firewall Manager anti-DDoS group overridden to Count must FAIL like an inline one.
+
+        The override is read off the Firewall Manager entry itself, so delivery by policy does not
+        exempt the group from the enforcement test.
+        """
         from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
 
         aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
@@ -561,6 +606,11 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
 
     @mock_aws
     def test_region_without_web_acls(self):
+        """Auditing a region with no Web ACLs yields no reports, though another region has one.
+
+        The protected Web ACL exists in us-east-1 while the audit covers eu-south-2, so a collector
+        that ignored the audited region would leak a PASS from a region nobody asked about.
+        """
         _create_web_acl(
             "test-us-east-1", [_managed_rule_group_rule("anti-ddos", 1, {"None": {}})]
         )
@@ -586,6 +636,11 @@ class Test_wafv2_webacl_anti_ddos_rule_group_attached:
 
     @mock_aws
     def test_multiple_web_acls_pass_and_fail(self):
+        """Three Web ACLs get three reports, each judged on its own rules.
+
+        Enforcing, overridden to Count and absent must map to PASS, FAIL and FAIL, a split a check
+        that carried state between Web ACLs would not produce.
+        """
         protected = _create_web_acl(
             "test-multi-protected",
             [_managed_rule_group_rule("anti-ddos", 1, {"None": {}})],

@@ -61,6 +61,11 @@ def _managed_rule_group_rule(name: str, priority: int, override: dict) -> dict:
 
 
 def _create_web_acl(name: str, rules: list, default_action: dict = None) -> dict:
+    """Create a REGIONAL Web ACL in moto, allowing by default unless the caller overrides it.
+
+    The default action matters to this check: a Web ACL that blocks by default enforces without any
+    rule needing a blocking action, so `default_action` is a parameter rather than a constant.
+    """
     wafv2 = client("wafv2", region_name=AWS_REGION_US_EAST_1)
     return wafv2.create_web_acl(
         Name=name,
@@ -76,6 +81,7 @@ def _create_web_acl(name: str, rules: list, default_action: dict = None) -> dict
 # only way to exercise that path is a stubbed GetWebACL response. The group is overridden to
 # Count, which is the FAIL condition.
 def mock_make_api_call(self, operation_name, kwarg):
+    """Serve a Web ACL whose only rule group is a Firewall Manager one overridden to Count."""
     if operation_name == "ListWebACLs":
         return {"WebACLs": [{"Name": FM_RG_NAME, "Id": FM_RG_NAME, "ARN": FM_RG_ARN}]}
     elif operation_name == "GetWebACL":
@@ -114,6 +120,7 @@ def mock_make_api_call(self, operation_name, kwarg):
 
 
 def mock_make_api_call_list_denied(self, operation_name, kwarg):
+    """Deny ListWebACLs, so no Web ACL is collected and the check has nothing to report on."""
     if operation_name == "ListWebACLs":
         raise botocore.exceptions.ClientError(
             {
@@ -130,6 +137,7 @@ def mock_make_api_call_list_denied(self, operation_name, kwarg):
 class Test_wafv2_webacl_rules_not_count_only:
     @mock_aws
     def test_no_web_acls(self):
+        """An account with no Web ACLs produces no reports, not a PASS for the account."""
         from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
 
         aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
@@ -151,6 +159,11 @@ class Test_wafv2_webacl_rules_not_count_only:
 
     @mock_aws
     def test_web_acl_blocking_rule(self):
+        """A single rule with Action Block must PASS.
+
+        Also pins the report's identity fields -- resource id, ARN, region and tags -- which every
+        other case in this file takes for granted.
+        """
         waf = _create_web_acl(
             "test-blocking", [_byte_match_rule("block-it", 1, {"Block": {}})]
         )
@@ -351,6 +364,11 @@ class Test_wafv2_webacl_rules_not_count_only:
     @patch("botocore.client.BaseClient._make_api_call", new=mock_make_api_call)
     @mock_aws
     def test_web_acl_firewall_manager_rule_group_count_only(self):
+        """A Web ACL whose only rule group is a Firewall Manager one in Count must FAIL.
+
+        The group is absent from WebACL.Rules, so a check reading only that list would see no rules
+        at all and skip the Web ACL instead of reporting that nothing blocks.
+        """
         from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
 
         aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
@@ -428,6 +446,11 @@ class Test_wafv2_webacl_rules_not_count_only:
 
     @mock_aws
     def test_multiple_web_acls_pass_and_fail(self):
+        """Three Web ACLs yield two reports: the rule-less one is skipped, not reported.
+
+        Blocking maps to PASS and count-only to FAIL, while the empty Web ACL produces no report at
+        all because wafv2_webacl_with_rules owns that case.
+        """
         blocking = _create_web_acl(
             "test-multi-blocking", [_byte_match_rule("block-it", 1, {"Block": {}})]
         )

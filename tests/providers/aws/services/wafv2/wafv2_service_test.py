@@ -62,6 +62,7 @@ def mock_make_api_call_firewall_manager_anti_ddos(self, operation_name, kwarg):
 
 
 def mock_make_api_call_get_web_acl_denied(self, operation_name, kwarg):
+    """List one Web ACL and deny GetWebACL, as a role holding ListWebACLs but not GetWebACL."""
     if operation_name == "ListWebACLs":
         return {
             "WebACLs": [
@@ -86,6 +87,11 @@ def mock_make_api_call_get_web_acl_denied(self, operation_name, kwarg):
 
 
 def mock_make_api_call_get_web_acl_empty_response(self, operation_name, kwarg):
+    """Return a GetWebACL response carrying only a LockToken and no WebACL structure.
+
+    A success the collector cannot parse anything out of, which must leave the rules unknown rather
+    than recorded as empty.
+    """
     if operation_name == "ListWebACLs":
         return {
             "WebACLs": [
@@ -319,6 +325,11 @@ class Test_WAFv2_Service:
 
     @mock_aws
     def test_get_web_acl_rule_actions(self):
+        """Each rule's effective action is read from the field the WAFv2 API allows it on.
+
+        A standalone rule carries Action and a rule group reference carries OverrideAction, so only
+        the Block rule is enforcing: a Count action and a group overridden to Count are not.
+        """
         wafv2 = client("wafv2", region_name=AWS_REGION_EU_WEST_1)
         visibility = {
             "SampledRequestsEnabled": True,
@@ -402,6 +413,11 @@ class Test_WAFv2_Service:
 
     @mock_aws
     def test_get_web_acl_managed_rule_group_identity(self):
+        """A ManagedRuleGroupStatement records its vendor and group name; other statements do not.
+
+        The anti-DDoS check identifies its rule group by that pair, so a statement of another kind
+        has to leave both fields None rather than defaulting to a string that could match.
+        """
         wafv2 = client("wafv2", region_name=AWS_REGION_EU_WEST_1)
         waf = wafv2.create_web_acl(
             Scope="REGIONAL",
@@ -472,6 +488,11 @@ class Test_WAFv2_Service:
     )
     @mock_aws
     def test_get_web_acl_firewall_manager_managed_rule_group_identity(self):
+        """A Firewall Manager rule group reaches rule_groups with its vendor and name intact.
+
+        Firewall Manager pushes the group outside WebACL.Rules, which stays empty here, so a
+        collector reading only Rules would record this Web ACL as carrying no managed rule group.
+        """
         aws = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
         wafv2 = WAFv2(aws)
 

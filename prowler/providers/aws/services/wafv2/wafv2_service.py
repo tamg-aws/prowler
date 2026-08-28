@@ -122,6 +122,14 @@ class WAFv2(AWSService):
             )
 
     def _get_web_acl(self, acl: str):
+        """Populate a Web ACL's default action and its full rule inventory from GetWebACL.
+
+        Rules that reference a rule group land in `rule_groups` and the rest in `rules`. The
+        Firewall Manager pre- and post-process groups are appended to `rule_groups` as well,
+        because they apply to the Web ACL without appearing in its own Rules list. `rules_retrieved`
+        is set only once the whole inventory has been parsed, so a caller can tell a Web ACL with
+        no rules from one whose rules could not be read.
+        """
         logger.info("WAFv2 - Getting Web ACL...")
         try:
             if acl.scope == Scope.REGIONAL or acl.region in self.regional_clients:

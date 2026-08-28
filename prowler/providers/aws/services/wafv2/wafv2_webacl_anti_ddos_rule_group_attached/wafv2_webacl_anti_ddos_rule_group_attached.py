@@ -7,6 +7,15 @@ ANTI_DDOS_RULE_GROUP_NAME = "AWSManagedRulesAntiDDoSRuleSet"
 
 class wafv2_webacl_anti_ddos_rule_group_attached(Check):
     def execute(self):
+        """Report on the AWSManagedRulesAntiDDoSRuleSet rule group for every Web ACL.
+
+        A Web ACL whose rules could not be retrieved is reported MANUAL rather than FAIL, because an
+        unread rule set is not evidence that the rule group is missing.
+
+        Returns:
+            One report per Web ACL: PASS when the rule group is attached and left enforcing, FAIL
+            when it is absent or overridden to Count, MANUAL when the rules are unknown.
+        """
         findings = []
         for web_acl in wafv2_client.web_acls.values():
             report = Check_Report_AWS(metadata=self.metadata(), resource=web_acl)

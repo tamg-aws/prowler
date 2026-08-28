@@ -4,6 +4,15 @@ from prowler.providers.aws.services.wafv2.wafv2_client import wafv2_client
 
 class wafv2_webacl_rules_not_count_only(Check):
     def execute(self):
+        """Report on whether anything in each Web ACL can block a matching request.
+
+        One enforcing rule is enough, so the verdict does not depend on the order rules are
+        evaluated in, and a Web ACL with no rules at all is skipped rather than reported.
+
+        Returns:
+            One report per Web ACL that has rules: PASS when it blocks by default or any one rule or
+            rule group can block, FAIL when every one of them only counts.
+        """
         findings = []
         for web_acl in wafv2_client.web_acls.values():
             all_rules = web_acl.rules + web_acl.rule_groups
