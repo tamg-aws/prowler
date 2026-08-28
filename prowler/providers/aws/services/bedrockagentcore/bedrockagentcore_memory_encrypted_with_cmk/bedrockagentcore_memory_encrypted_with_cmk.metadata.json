@@ -1,0 +1,42 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_memory_encrypted_with_cmk",
+  "CheckTitle": "Bedrock AgentCore memory is encrypted with a customer-managed KMS key",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "Software and Configuration Checks/AWS Security Best Practices/Data Encryption"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore memory** resources store agent conversational and semantic state. This check verifies each memory resource has a customer managed KMS key (`encryptionKeyArn`) configured for encryption at rest.",
+  "Risk": "**Agent memory** holds conversation history and extracted facts about users and systems, so it accumulates the sensitive content of every session.\n\nUnder an **AWS managed key**, the account has no key policy restricting who may decrypt it, no customer-controlled rotation, and no way to revoke access by disabling a key.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::Memory\n    Properties:\n      Name: example_resource\n      EncryptionKeyArn: arn:aws:kms:us-east-1:123456789012:key/example-key-id  # Critical: enables CMK encryption\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Memory** from the navigation pane\n3. Create or edit a memory resource\n4. Under encryption, choose a customer managed KMS key\n5. Save the memory resource",
+      "Terraform": "```hcl\nresource \"aws_bedrockagentcore_memory\" \"example_resource\" {\n  name                  = \"example_resource\"\n  event_expiry_duration = 30\n  encryption_key_arn    = aws_kms_key.example_resource.arn # Critical: without this AWS owns the key\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Configure every Bedrock AgentCore memory resource with a customer managed KMS key so the account retains control over key rotation, access policy, and revocation for stored agent memory data.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_memory_encrypted_with_cmk"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "encryption"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrock_prompt_encrypted_with_cmk"
+  ],
+  "Notes": "This check reports one finding per AgentCore memory resource discovered via ListMemories/GetMemory in each scanned region. A memory whose GetMemory detail could not be retrieved returns MANUAL rather than FAIL, because an absent encryptionKeyArn means the answer is unknown, not that no key is set."
+}

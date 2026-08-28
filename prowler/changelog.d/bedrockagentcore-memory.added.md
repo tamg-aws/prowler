@@ -1,0 +1,1 @@
+`bedrockagentcore_memory_application_logs_enabled` and `bedrockagentcore_memory_encrypted_with_cmk` checks for AWS provider, covering AgentCore memory vended-log delivery and customer managed key encryption

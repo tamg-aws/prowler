@@ -1,0 +1,42 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_memory_application_logs_enabled",
+  "CheckTitle": "Bedrock AgentCore memory delivers its application logs",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore memory** emits application logs covering the extraction and consolidation jobs that turn session events into long-term memory records, plus `DeleteMemory` processing. AgentCore configures no log destination for memory automatically, so those logs exist only once a **CloudWatch Logs** vended-log delivery for `APPLICATION_LOGS` targets the memory ARN.",
+  "Risk": "A memory with no **application-log** delivery keeps no record of how its stored facts were formed.\n\nExtraction and consolidation run inside the service rather than as caller API calls, so **CloudTrail** never sees them: a **memory poisoning** attempt cannot be traced back to the session, actor, or event that introduced the record, and silent extraction failures go unnoticed.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-memory-metrics.html",
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/observability-configure.html",
+    "https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutDeliverySource.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws logs put-delivery-source --name <example_resource_name>-logs-source --log-type APPLICATION_LOGS --resource-arn <memory_arn> && aws logs put-delivery-destination --name <example_resource_name>-logs-destination --delivery-destination-type CWL --delivery-destination-configuration destinationResourceArn=<log_group_arn> && aws logs create-delivery --delivery-source-name <example_resource_name>-logs-source --delivery-destination-arn <delivery_destination_arn>",
+      "NativeIaC": "```yaml\nResources:\n  exampleDeliverySource:\n    Type: AWS::Logs::DeliverySource\n    Properties:\n      Name: example_resource-logs-source\n      LogType: APPLICATION_LOGS  # Critical: the extraction and consolidation logs\n      ResourceArn: arn:aws:bedrock-agentcore:us-east-1:123456789012:memory/example_memory-EXAMPLE123\n  exampleDeliveryDestination:\n    Type: AWS::Logs::DeliveryDestination\n    Properties:\n      Name: example_resource-logs-destination\n      DestinationResourceArn: !GetAtt exampleLogGroup.Arn\n  exampleDelivery:\n    Type: AWS::Logs::Delivery\n    Properties:\n      DeliverySourceName: !Ref exampleDeliverySource\n      DeliveryDestinationArn: !GetAtt exampleDeliveryDestination.Arn\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Memory** from the navigation pane and choose the memory\n3. Scroll to the **Log delivery** pane and choose **Add**\n4. Select a destination type (CloudWatch Logs group, Amazon S3 bucket, or Amazon Data Firehose)\n5. For **Log type**, select **APPLICATION_LOGS**\n6. For CloudWatch Logs, accept the default destination log group or enter one beginning with /aws/vendedlogs/\n7. Choose **Add** and confirm the log delivery status shows Delivery active",
+      "Terraform": "```hcl\nresource \"aws_cloudwatch_log_delivery_source\" \"example_resource\" {\n  name = \"example_resource-logs-source\"\n  # Critical: without an APPLICATION_LOGS source the extraction and consolidation logs are never emitted\n  log_type     = \"APPLICATION_LOGS\"\n  resource_arn = aws_bedrockagentcore_memory.example_resource.arn\n}\n\nresource \"aws_cloudwatch_log_delivery_destination\" \"example_resource\" {\n  name = \"example_resource-logs-destination\"\n\n  delivery_destination_configuration {\n    destination_resource_arn = aws_cloudwatch_log_group.example_resource.arn\n  }\n}\n\n# Critical: a delivery source with no delivery attached emits nothing\nresource \"aws_cloudwatch_log_delivery\" \"example_resource\" {\n  delivery_source_name     = aws_cloudwatch_log_delivery_source.example_resource.name\n  delivery_destination_arn = aws_cloudwatch_log_delivery_destination.example_resource.arn\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Create a CloudWatch Logs vended-log delivery for each AgentCore memory: register an `APPLICATION_LOGS` delivery source against the memory ARN, create a CloudWatch Logs, S3, or Firehose delivery destination, then create the delivery that links them. A CloudWatch Logs destination must be a log group whose name begins with `/aws/vendedlogs/`. Set a retention period that matches your investigation window and pivot on the `session_id`, `actor_id`, and `event_id` fields to tie an extracted memory record back to the conversation it came from.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_memory_application_logs_enabled"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "forensics-ready",
+    "logging"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "This check reports one finding per AgentCore memory discovered via ListMemories in each scanned region, so an account with no memory resources produces no findings. A memory ARN is matched against DeliverySource.resourceArns, the only field that ties a delivery source to a specific resource, and a TRACES source for the same memory carries spans rather than the application logs so it is not credited. A region whose delivery inventory could not be listed returns MANUAL rather than FAIL, because vended-log delivery is off by default and an unreadable inventory cannot be distinguished from a disabled one. The collector reading DescribeDeliverySources and DescribeDeliveries runs only when a check that reads it is in scope."
+}
