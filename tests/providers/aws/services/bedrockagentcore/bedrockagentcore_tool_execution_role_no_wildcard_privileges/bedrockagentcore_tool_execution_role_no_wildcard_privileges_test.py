@@ -246,13 +246,22 @@ class Test_bedrockagentcore_tool_execution_role_no_wildcard_privileges:
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
     @mock_aws
     def test_scoped_inline_policy_passes(self):
-        """A role whose only grant is action- and resource-scoped is compliant."""
+        """A role whose only grant is action- and resource-scoped is compliant.
+
+        The PASS sentence says "no attached or inline policy individually granting", not "does not
+        grant". The qualifier is load-bearing: documents are never aggregated, so an escalation
+        combination split across two of the role's policies would still reach this branch.
+        """
         result = self._run(
             roles=[_Role(inline_policies=["scoped"])],
             policies={f"{ROLE_ARN}:policy/scoped": _Policy(SCOPED_DOC)},
         )
         assert len(result) == 1
         assert result[0].status == "PASS"
+        assert (
+            "execution role has no attached or inline policy individually granting wildcard privileges"
+            in result[0].status_extended
+        )
         assert result[0].resource_id == RES_ID
         assert result[0].resource_arn == RES_ARN
         assert result[0].region == AWS_REGION_US_EAST_1
