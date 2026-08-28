@@ -1,0 +1,43 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_tool_network_mode_not_public",
+  "CheckTitle": "Bedrock AgentCore built-in tool does not use public network mode",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "Software and Configuration Checks/AWS Security Best Practices/Network Security"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore** built-in tools (code interpreters and browsers) can run with `networkMode` set to `PUBLIC`, `SANDBOX`, or `VPC`. This check verifies each tool is not left in `PUBLIC` network mode.",
+  "Risk": "A **code interpreter or browser tool** with `networkMode` `PUBLIC` executes agent-directed code or browsing sessions with direct outbound internet access instead of a sandboxed or VPC-scoped network path, widening the blast radius if the agent is manipulated into exfiltrating data or reaching unintended endpoints.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html",
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-tool.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::BrowserCustom\n    Properties:\n      Name: example_resource\n      NetworkConfiguration:\n        NetworkMode: VPC  # Critical: removes direct public network access\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Tools**, then the code interpreter or browser\n3. Edit its network configuration\n4. Set network mode to SANDBOX or VPC\n5. Save the tool",
+      "Terraform": "```hcl\nresource \"aws_bedrockagentcore_browser\" \"example_resource\" {\n  name = \"example_resource\"\n\n  network_configuration {\n    network_mode = \"VPC\" # Critical: PUBLIC gives the tool unrestricted internet egress\n  }\n}\n\nresource \"aws_bedrockagentcore_code_interpreter\" \"example_resource\" {\n  name = \"example_resource\"\n\n  network_configuration {\n    network_mode = \"SANDBOX\" # Critical: PUBLIC gives the tool unrestricted internet egress\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Run Bedrock AgentCore code interpreter and browser tools with `networkMode` set to `SANDBOX` or `VPC` instead of `PUBLIC`, so agent-directed code execution and browsing sessions do not have direct outbound internet access.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_tool_network_mode_not_public"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "internet-exposed"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrockagentcore_tool_execution_role_no_wildcard_privileges"
+  ],
+  "Notes": "This check reports one finding per code interpreter and per browser discovered via ListCodeInterpreters/GetCodeInterpreter and ListBrowsers/GetBrowser in each scanned region. A tool whose GetCodeInterpreter/GetBrowser detail could not be retrieved returns MANUAL rather than PASS, because an absent networkMode means the answer is unknown, not that the mode is other than PUBLIC."
+}

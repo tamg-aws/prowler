@@ -1,0 +1,44 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_tool_execution_role_no_wildcard_privileges",
+  "CheckTitle": "Bedrock AgentCore built-in tool execution role does not grant wildcard privileges",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "TTPs/Privilege Escalation"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "high",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "**Bedrock AgentCore** code interpreter and browser tools run agent-directed code under an `executionRoleArn`. This check verifies that role grants no administrative access, no AWS-managed `*FullAccess` policy, no service-wide access to a sensitive service such as `s3:*`, and no known privilege escalation combination.",
+  "Risk": "**Code interpreter and browser tools** run code chosen by the model, so a prompt injection or manipulated tool call executes with the tool's execution role. A role holding administrative access, a `*FullAccess` policy, or a service-wide grant such as `s3:*` turns any manipulation of the agent into broad data access or privilege escalation: the sandbox limits the network, not what the role may do.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html",
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-tool.html",
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-command-shell.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "aws iam put-role-policy --role-name example-tool-execution-role --policy-name example-scoped-policy --policy-document '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::example-bucket/example-prefix/*\"}]}'",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::IAM::Role\n    Properties:\n      RoleName: example_resource\n      Policies:\n        - PolicyName: example-scoped-policy\n          PolicyDocument:\n            Version: '2012-10-17'\n            Statement:\n              - Effect: Allow\n                Action:\n                  - s3:GetObject  # Critical: enumerate actions instead of s3:*\n                Resource: arn:aws:s3:::example-bucket/example-prefix/*  # Critical: scope to specific resources\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Tools**, then the code interpreter or browser, and note its execution role\n3. Open that role in IAM\n4. Detach any *FullAccess* managed policy and replace wildcard actions (for example s3:*) with the specific actions the tool needs\n5. Scope every statement's Resource to specific ARNs rather than *\n6. Save the role",
+      "Terraform": "```hcl\nresource \"aws_iam_role_policy\" \"example_resource\" {\n  name = \"example-scoped-policy\"\n  role = aws_iam_role.example_tool_execution_role.id\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect   = \"Allow\"\n      Action   = [\"s3:GetObject\"] # Critical: enumerate actions instead of s3:*\n      Resource = \"arn:aws:s3:::example-bucket/example-prefix/*\"\n    }]\n  })\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Scope Bedrock AgentCore code interpreter and browser execution roles to the specific actions and resource ARNs the tool needs, on the assumption that any code running in the sandbox can use the role. Remove *FullAccess* managed policies and service-wide grants, and prefer a separate role per tool over one shared role.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_tool_execution_role_no_wildcard_privileges"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "identity-access"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrockagentcore_tool_network_mode_not_public"
+  ],
+  "Notes": "Reports one finding per code interpreter and per browser, resolving executionRoleArn from GetCodeInterpreter/GetBrowser against the IAM role and policy inventory. A tool with no execution role returns PASS because it has no permissions to over-grant; a role that a tool names but that is absent from the IAM inventory returns MANUAL, because an absent role is unknown rather than a violation, and a denied iam:ListRoles likewise returns MANUAL for every tool because the inventory itself is then unknown; a tool whose GetCodeInterpreter/GetBrowser detail could not be retrieved returns MANUAL, because an absent executionRoleArn means the answer is unknown, not that no role is attached. Interactive shells (InvokeAgentRuntimeCommandShell) inherit the same role, so this check covers that surface too."
+}

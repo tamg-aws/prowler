@@ -1,0 +1,1 @@
+`bedrockagentcore_browser_session_recording_enabled`, `bedrockagentcore_tool_execution_role_no_wildcard_privileges` and `bedrockagentcore_tool_network_mode_not_public` checks for AWS provider, covering AgentCore built-in browser and code interpreter session recording, execution role scope and network exposure

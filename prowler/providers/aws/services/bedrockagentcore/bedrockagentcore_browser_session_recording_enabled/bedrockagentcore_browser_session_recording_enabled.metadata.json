@@ -1,0 +1,43 @@
+{
+  "Provider": "aws",
+  "CheckID": "bedrockagentcore_browser_session_recording_enabled",
+  "CheckTitle": "Bedrock AgentCore browser tool has session recording enabled",
+  "CheckType": [
+    "Software and Configuration Checks/AWS Security Best Practices",
+    "Software and Configuration Checks/AWS Security Best Practices/Runtime Behavior Analysis"
+  ],
+  "ServiceName": "bedrockagentcore",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "low",
+  "ResourceType": "Other",
+  "ResourceGroup": "ai_ml",
+  "Description": "The **Bedrock AgentCore browser tool** can record agent browsing sessions to S3 for later review. This check verifies `recording.enabled` is `true` on each browser resource.",
+  "Risk": "A **browser tool** without session recording (`recording.enabled` not `true`) leaves no forensic record of the pages an agent visited or the actions it took during a browsing session, hindering incident investigation if the agent is manipulated into unsafe browsing behavior.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-tool.html"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::BrowserCustom\n    Properties:\n      Name: example_resource\n      RecordingConfig:\n        Enabled: true  # Critical: enables session recording\n        S3Location:\n          Bucket: example-bucket\n          Prefix: agentcore-browser/\n```",
+      "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Tools**, then the browser tool\n3. Edit its recording configuration\n4. Enable recording and choose an S3 destination\n5. Save the browser tool",
+      "Terraform": "```hcl\nresource \"aws_bedrockagentcore_browser\" \"example_resource\" {\n  name = \"example_resource\"\n\n  network_configuration {\n    network_mode = \"VPC\"\n  }\n\n  # Critical: recording defaults to disabled, leaving no record of the session\n  recording {\n    enabled = true\n    s3_location {\n      bucket = aws_s3_bucket.example_resource.bucket\n      prefix = \"browser-recordings/\"\n    }\n  }\n}\n```"
+    },
+    "Recommendation": {
+      "Text": "Enable session recording on every Bedrock AgentCore browser tool and direct it to an S3 bucket, so browsing sessions are available for forensic review after an incident.",
+      "Url": "https://hub.prowler.com/check/bedrockagentcore_browser_session_recording_enabled"
+    }
+  },
+  "Categories": [
+    "gen-ai",
+    "forensics-ready",
+    "logging"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "bedrockagentcore_tool_network_mode_not_public"
+  ],
+  "Notes": "This check reports one finding per browser resource discovered via ListBrowsers/GetBrowser in each scanned region. A browser whose GetBrowser detail could not be retrieved returns MANUAL rather than PASS or FAIL, because an absent recording block means the answer is unknown, not that recording is disabled."
+}
