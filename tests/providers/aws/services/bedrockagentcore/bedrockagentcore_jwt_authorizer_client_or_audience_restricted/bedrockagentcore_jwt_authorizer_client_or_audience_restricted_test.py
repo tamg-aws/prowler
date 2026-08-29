@@ -220,6 +220,62 @@ _mock_gateway_unrestricted = _gateway_detail_mock(
 _mock_gateway_readable_aws_iam = _gateway_detail_mock(authorizer_type="AWS_IAM")
 
 
+def _runtime_detail_mock(jwt_authorizer=None, authorizer_configuration_present=True):
+    """Build a _make_api_call replacement returning one runtime whose GetAgentRuntime succeeds.
+
+    No gateways are listed, so every finding comes from the runtime loop. The gateway loop has
+    audience-only and out-of-scope fixtures already; these are the runtime-side equivalents, and
+    without them the runtime loop's ``allowedAudience`` term and its ``customJWTAuthorizer`` scope
+    skip can both be deleted with the whole suite still green.
+
+    Args:
+        jwt_authorizer: The customJWTAuthorizer block, or None to omit it.
+        authorizer_configuration_present: When False, GetAgentRuntime omits
+            authorizerConfiguration entirely -- the default IAM SigV4 posture, which is
+            bedrockagentcore_runtime_inbound_authorizer_configured's subject and out of scope here.
+    """
+
+    def _mock(self, operation_name, kwarg):
+        """Mock returning one runtime with GetAgentRuntime enrichment."""
+        if operation_name == "ListAgentRuntimes":
+            return {
+                "agentRuntimes": [
+                    {
+                        "agentRuntimeArn": RES_ARN,
+                        "agentRuntimeId": RES_ID,
+                        "agentRuntimeName": RES_NAME,
+                    }
+                ]
+            }
+        if operation_name == "GetAgentRuntime":
+            response = {
+                "agentRuntimeId": RES_ID,
+                "agentRuntimeName": RES_NAME,
+                "agentRuntimeArn": RES_ARN,
+            }
+            if authorizer_configuration_present and jwt_authorizer is not None:
+                response["authorizerConfiguration"] = {
+                    "customJWTAuthorizer": jwt_authorizer
+                }
+            return response
+        if operation_name == "ListGateways":
+            return {"items": []}
+        unstubbed = _unstubbed(operation_name)
+        if unstubbed is not None:
+            return unstubbed
+        return make_api_call(self, operation_name, kwarg)
+
+    return _mock
+
+
+_mock_runtime_allowed_audience = _runtime_detail_mock(
+    jwt_authorizer={"discoveryUrl": DISCOVERY_URL, "allowedAudience": ["aud-1"]}
+)
+_mock_runtime_no_authorizer_configuration = _runtime_detail_mock(
+    authorizer_configuration_present=False
+)
+
+
 def _mock_empty(self, operation_name, kwarg):
     """No runtime resources at all."""
     if operation_name == "ListAgentRuntimes":
@@ -399,4 +455,47 @@ class Test_bedrockagentcore_jwt_authorizer_client_or_audience_restricted:
     @mock_aws
     def test_readable_gateway_not_custom_jwt_is_skipped(self):
         """An AWS_IAM gateway is out of scope even when GetGateway succeeds."""
+        assert self._run() == []
+
+    @mock.patch(
+        "botocore.client.BaseClient._make_api_call", new=_mock_runtime_allowed_audience
+    )
+    @mock_aws
+    def test_runtime_allowed_audience_only_passes(self):
+        """allowedAudience alone restricts a RUNTIME, exactly as it does a gateway.
+
+        The gateway loop had this fixture and the runtime loop did not, so the runtime side's
+        ``or bool(runtime.custom_jwt_allowed_audience)`` term could be deleted with every test still
+        green. A Cognito or OIDC authorizer scoped by audience rather than by client id is the
+        ordinary shape, so this reports PASS.
+        """
+        result = self._run()
+        assert len(result) == 1
+        assert result[0].status == "PASS"
+        assert result[0].resource_id == RES_ID
+        assert result[0].resource_arn == RES_ARN
+        assert result[0].region == AWS_REGION_US_EAST_1
+        assert result[0].status_extended == (
+            f"Bedrock AgentCore agent runtime {RES_NAME} custom JWT authorizer restricts allowed "
+            f"clients or audience in region {AWS_REGION_US_EAST_1}."
+        )
+
+    @mock.patch(
+        "botocore.client.BaseClient._make_api_call",
+        new=_mock_runtime_no_authorizer_configuration,
+    )
+    @mock_aws
+    def test_runtime_without_authorizer_configuration_is_out_of_scope(self):
+        """A runtime with no authorizerConfiguration produces NO finding from this check.
+
+        That posture is the default IAM SigV4 fallback and it is
+        bedrockagentcore_runtime_inbound_authorizer_configured's subject. Without this fixture the
+        runtime-side ``customJWTAuthorizer not in ...`` scope skip could be deleted and every such
+        runtime in an estate would be reported FAIL under this CheckID as well, double-counting one
+        defect under two checks.
+
+        This case and the audience-only one above disagree with each other in every world -- PASS
+        against no finding when the code is right, and FAIL against no finding or PASS against FAIL
+        under either deletion -- which is what makes them discriminate rather than merely add rows.
+        """
         assert self._run() == []
