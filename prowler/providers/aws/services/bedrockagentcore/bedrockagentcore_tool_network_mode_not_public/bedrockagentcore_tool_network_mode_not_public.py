@@ -66,6 +66,14 @@ class bedrockagentcore_tool_network_mode_not_public(Check):
             if code_interpreter.network_mode == "PUBLIC":
                 report.status = "FAIL"
                 report.status_extended = f"Bedrock AgentCore code interpreter {code_interpreter.name} uses PUBLIC network mode in region {code_interpreter.region}."
+            elif code_interpreter.network_mode is None:
+                # The detail call succeeded but carried no networkConfiguration, so no network mode
+                # was reported. Reading that as "not PUBLIC" asserted compliance from an absent
+                # answer -- the omitted-key case PASSed. The sibling recording check takes exactly
+                # this branch for the same reason: an optional member with no documented default
+                # cannot be read as its safe value.
+                report.status = "MANUAL"
+                report.status_extended = f"Bedrock AgentCore code interpreter {code_interpreter.name} reports no network mode in region {code_interpreter.region}; verify manually that it is not PUBLIC."
             else:
                 report.status = "PASS"
                 report.status_extended = f"Bedrock AgentCore code interpreter {code_interpreter.name} does not use PUBLIC network mode in region {code_interpreter.region}."
@@ -85,6 +93,14 @@ class bedrockagentcore_tool_network_mode_not_public(Check):
             if browser.network_mode == "PUBLIC":
                 report.status = "FAIL"
                 report.status_extended = f"Bedrock AgentCore browser {browser.name} uses PUBLIC network mode in region {browser.region}."
+            elif browser.network_mode is None:
+                # The detail call succeeded but carried no networkConfiguration, so no network mode
+                # was reported. Reading that as "not PUBLIC" asserted compliance from an absent
+                # answer -- the omitted-key case PASSed. The sibling recording check takes exactly
+                # this branch for the same reason: an optional member with no documented default
+                # cannot be read as its safe value.
+                report.status = "MANUAL"
+                report.status_extended = f"Bedrock AgentCore browser {browser.name} reports no network mode in region {browser.region}; verify manually that it is not PUBLIC."
             else:
                 report.status = "PASS"
                 report.status_extended = f"Bedrock AgentCore browser {browser.name} does not use PUBLIC network mode in region {browser.region}."

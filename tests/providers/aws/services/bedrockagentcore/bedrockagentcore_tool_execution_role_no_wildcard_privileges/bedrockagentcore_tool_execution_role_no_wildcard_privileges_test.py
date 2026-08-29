@@ -35,6 +35,9 @@ RES_ID = "test-resource-id"
 RES_NAME = "test-resource"
 RES_ARN = f"arn:aws:bedrock-agentcore:{AWS_REGION_US_EAST_1}:{AWS_ACCOUNT_NUMBER}:code-interpreter/test-resource-id"
 ROLE_ARN = f"arn:aws:iam::{AWS_ACCOUNT_NUMBER}:role/test-tool-execution-role"
+BROWSER_ID = "test-browser-id"
+BROWSER_NAME = "test-browser"
+BROWSER_ARN = f"arn:aws:bedrock-agentcore:{AWS_REGION_US_EAST_1}:{AWS_ACCOUNT_NUMBER}:browser/test-browser-id"
 
 SCOPED_DOC = {
     "Version": "2012-10-17",
@@ -111,6 +114,39 @@ def _tool_mock(execution_role_arn=ROLE_ARN):
 
 _mock_with_role = _tool_mock()
 _mock_without_role = _tool_mock(execution_role_arn=None)
+
+
+def _browser_mock(self, operation_name, kwarg):
+    """One BROWSER with an execution role, and no code interpreters at all.
+
+    The browser arm of the collection was unexercised: deleting it left every test green while a
+    browser with an admin execution role went from one FAIL to no findings. A code-interpreter
+    fixture cannot cover it, because each tool type is collected separately.
+    """
+    if operation_name == "ListCodeInterpreters":
+        return {"codeInterpreterSummaries": []}
+    if operation_name == "ListBrowsers":
+        return {
+            "browserSummaries": [
+                {
+                    "browserArn": BROWSER_ARN,
+                    "browserId": BROWSER_ID,
+                    "name": BROWSER_NAME,
+                }
+            ]
+        }
+    if operation_name == "GetBrowser":
+        return {
+            "browserId": BROWSER_ID,
+            "name": BROWSER_NAME,
+            "browserArn": BROWSER_ARN,
+            "networkConfiguration": {"networkMode": "SANDBOX"},
+            "executionRoleArn": ROLE_ARN,
+        }
+    default = _default_agentcore(operation_name)
+    if default is not None:
+        return default
+    return make_api_call(self, operation_name, kwarg)
 
 
 def _mock_unreadable(self, operation_name, kwarg):
@@ -227,6 +263,49 @@ class Test_bedrockagentcore_tool_execution_role_no_wildcard_privileges:
             return (
                 bedrockagentcore_tool_execution_role_no_wildcard_privileges().execute()
             )
+
+    @mock.patch("botocore.client.BaseClient._make_api_call", new=_browser_mock)
+    @mock_aws
+    def test_a_browser_execution_role_is_assessed_too(self):
+        """A BROWSER's execution role must be assessed, not only a code interpreter's.
+
+        The browser arm of the collection was load-bearing with zero coverage: deleting it left all
+        72 tests green while this policy went from one FAIL to no findings at all. The class
+        docstring conceded "browsers share the same execution-role assertion", which is true of the
+        assertion and says nothing about the collection arm that feeds it.
+        """
+        result = self._run(
+            roles=[_Role(inline_policies=["admin"])],
+            policies={f"{ROLE_ARN}:policy/admin": _Policy(ADMIN_DOC)},
+        )
+        assert len(result) == 1
+        assert result[0].status == "FAIL"
+        assert result[0].resource_id == BROWSER_ID
+
+    @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
+    @mock_aws
+    def test_a_managed_policy_present_with_no_document_is_manual_not_pass(self):
+        """A policy entry that EXISTS but whose document was never read must be MANUAL.
+
+        Distinct from the absent-entry case already covered: prowler's IAM collector builds every
+        Policy first and only sets `document` when GetPolicyVersion succeeds, continuing past a
+        ClientError -- so a denied or throttled call leaves the entry in place with document None.
+        Weakening the guard to `policy_obj is None` left 21 tests green while this reported PASS,
+        certifying an unread policy document as clean.
+        """
+        arn = f"arn:aws:iam::{AWS_ACCOUNT_NUMBER}:policy/agent-sandbox-policy"
+        result = self._run(
+            roles=[
+                _Role(
+                    attached_policies=[
+                        {"PolicyName": "agent-sandbox-policy", "PolicyArn": arn}
+                    ]
+                )
+            ],
+            policies={arn: _Policy(None)},
+        )
+        assert len(result) == 1
+        assert result[0].status == "MANUAL"
 
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_empty)
     @mock_aws

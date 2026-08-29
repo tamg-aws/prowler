@@ -196,6 +196,60 @@ def _mock_unreadable_browser(self, operation_name, kwarg):
     return make_api_call(self, operation_name, kwarg)
 
 
+def _mock_no_network_config_code_interpreter(self, operation_name, kwarg):
+    """GetCodeInterpreter succeeds but carries no networkConfiguration at all.
+
+    networkConfiguration is an optional member, so a real response can omit it. That is a
+    different state from a failed detail call: the answer arrived and reported no network mode.
+    """
+    if operation_name == "ListCodeInterpreters":
+        return {
+            "codeInterpreterSummaries": [
+                {
+                    "codeInterpreterArn": RES_ARN,
+                    "codeInterpreterId": RES_ID,
+                    "name": RES_NAME,
+                }
+            ]
+        }
+    if operation_name == "GetCodeInterpreter":
+        return {
+            "codeInterpreterId": RES_ID,
+            "name": RES_NAME,
+            "codeInterpreterArn": RES_ARN,
+        }
+    default = _default_agentcore(operation_name)
+    if default is not None:
+        return default
+    return make_api_call(self, operation_name, kwarg)
+
+
+def _mock_no_network_config_browser(self, operation_name, kwarg):
+    """GetBrowser succeeds but carries no networkConfiguration; the browser loop is separate."""
+    if operation_name == "ListCodeInterpreters":
+        return {"codeInterpreterSummaries": []}
+    if operation_name == "ListBrowsers":
+        return {
+            "browserSummaries": [
+                {
+                    "browserArn": BROWSER_ARN,
+                    "browserId": BROWSER_ID,
+                    "name": BROWSER_NAME,
+                }
+            ]
+        }
+    if operation_name == "GetBrowser":
+        return {
+            "browserId": BROWSER_ID,
+            "name": BROWSER_NAME,
+            "browserArn": BROWSER_ARN,
+        }
+    default = _default_agentcore(operation_name)
+    if default is not None:
+        return default
+    return make_api_call(self, operation_name, kwarg)
+
+
 def _mock_empty(self, operation_name, kwarg):
     """No code-interpreter resources at all."""
     if operation_name == "ListCodeInterpreters":
@@ -253,6 +307,38 @@ class Test_bedrockagentcore_tool_network_mode_not_public:
             )
 
             return bedrockagentcore_tool_network_mode_not_public().execute()
+
+    @mock.patch(
+        "botocore.client.BaseClient._make_api_call",
+        new=_mock_no_network_config_code_interpreter,
+    )
+    @mock_aws
+    def test_code_interpreter_without_network_configuration_is_manual_not_pass(self):
+        """An absent networkConfiguration must be MANUAL, never PASS.
+
+        The detail call SUCCEEDED and reported no network mode, which is a different state from a
+        failed call. Comparing only against "PUBLIC" sent it down the else arm and asserted
+        compliance from an absent answer -- the omitted-key case PASSed. networkConfiguration is an
+        optional member with no documented default, so it cannot be read as its safe value; the
+        sibling recording check takes exactly this branch for the same reason.
+        """
+        result = self._run()
+        assert len(result) == 1
+        assert result[0].status == "MANUAL"
+        assert result[0].resource_id == RES_ID
+        assert "reports no network mode" in result[0].status_extended
+
+    @mock.patch(
+        "botocore.client.BaseClient._make_api_call", new=_mock_no_network_config_browser
+    )
+    @mock_aws
+    def test_browser_without_network_configuration_is_manual_not_pass(self):
+        """The same absent-key state on the browser loop, which is a separate loop."""
+        result = self._run()
+        assert len(result) == 1
+        assert result[0].status == "MANUAL"
+        assert result[0].resource_id == BROWSER_ID
+        assert "reports no network mode" in result[0].status_extended
 
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_empty)
     @mock_aws
