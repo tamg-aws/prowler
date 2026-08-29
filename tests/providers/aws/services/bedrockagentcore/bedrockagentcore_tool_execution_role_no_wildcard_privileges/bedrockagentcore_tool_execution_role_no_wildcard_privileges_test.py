@@ -284,6 +284,23 @@ class Test_bedrockagentcore_tool_execution_role_no_wildcard_privileges:
 
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
     @mock_aws
+    def test_an_inline_policy_present_with_no_document_is_manual_not_pass(self):
+        """The same unread-document state on the INLINE arm, which is a separate guard.
+
+        Found by mutation: weakening only the inline guard to `policy_obj is None` left every test
+        green, because the managed fixture below cannot reach this arm and the existing inline test
+        passes `policies={}`, which the absence half of the guard already catches. Two arms, two
+        halves each, and this was the one corner with no fixture.
+        """
+        result = self._run(
+            roles=[_Role(inline_policies=["unread-inline"])],
+            policies={f"{ROLE_ARN}:policy/unread-inline": _Policy(None)},
+        )
+        assert len(result) == 1
+        assert result[0].status == "MANUAL"
+
+    @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_with_role)
+    @mock_aws
     def test_a_managed_policy_present_with_no_document_is_manual_not_pass(self):
         """A policy entry that EXISTS but whose document was never read must be MANUAL.
 
