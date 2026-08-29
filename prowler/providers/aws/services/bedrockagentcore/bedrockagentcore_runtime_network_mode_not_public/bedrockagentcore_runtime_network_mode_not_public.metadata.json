@@ -20,7 +20,7 @@
   ],
   "Remediation": {
     "Code": {
-      "CLI": "```bash\naws bedrock-agentcore-control update-agent-runtime --agent-runtime-id <runtime_id> --agent-runtime-artifact <existing_artifact> --role-arn <role_arn> --network-configuration '{\"networkMode\":\"VPC\",\"networkModeConfig\":{\"subnets\":[\"<subnet_id>\"],\"securityGroups\":[\"<sg_id>\"]}}'\n```",
+      "CLI": "aws bedrock-agentcore-control update-agent-runtime --agent-runtime-id <runtime_id> --agent-runtime-artifact <existing_artifact> --role-arn <role_arn> --network-configuration '{\"networkMode\":\"VPC\",\"networkModeConfig\":{\"subnets\":[\"<subnet_id>\"],\"securityGroups\":[\"<sg_id>\"]}}'",
       "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::Runtime\n    Properties:\n      AgentRuntimeName: example_resource\n      NetworkConfiguration:\n        NetworkMode: VPC  # Critical: moves traffic into the account VPC\n```",
       "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Agent Runtimes** from the navigation pane\n3. Edit the agent runtime's network configuration\n4. Set network mode to VPC and choose subnets/security groups\n5. Save the agent runtime",
       "Terraform": "```hcl\nresource \"aws_bedrockagentcore_agent_runtime\" \"example_resource\" {\n  agent_runtime_name = \"example_resource\"\n  role_arn           = aws_iam_role.example_resource.arn\n\n  agent_runtime_artifact {\n    container_configuration {\n      container_uri = \"123456789012.dkr.ecr.us-east-1.amazonaws.com/example:latest\"\n    }\n  }\n\n  network_configuration {\n    network_mode = \"VPC\" # Critical: PUBLIC exposes the runtime to the internet\n  }\n}\n```"

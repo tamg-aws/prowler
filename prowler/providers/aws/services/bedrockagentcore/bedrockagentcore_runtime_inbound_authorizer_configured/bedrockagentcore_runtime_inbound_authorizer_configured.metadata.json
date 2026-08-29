@@ -11,21 +11,21 @@
   "Severity": "high",
   "ResourceType": "Other",
   "ResourceGroup": "ai_ml",
-  "Description": "**Bedrock AgentCore agent runtimes** host the invocation endpoint for an agent. This check verifies each agent runtime has an inbound authorizer configuration set rather than accepting unauthenticated invocations.",
-  "Risk": "An **agent runtime** with no `authorizerConfiguration` accepts unauthenticated `InvokeAgentRuntime` calls from anyone who can reach the runtime endpoint, allowing unauthorized use of the agent and its tools.",
+  "Description": "**Bedrock AgentCore agent runtimes** host the invocation endpoint for an agent. This check verifies each agent runtime configures a custom JWT inbound authorizer rather than falling back to the default IAM SigV4 authentication, which authenticates the calling IAM principal but carries no end-user identity.",
+  "Risk": "An **agent runtime** with no `authorizerConfiguration` falls back to IAM SigV4, which authenticates the calling AWS principal but propagates no validated end-user identity, so the agent cannot scope its actions or tool access to the person it acts for. SigV4 is correct for service-to-service calls; this check concerns runtimes reached by end users.",
   "RelatedUrl": "",
   "AdditionalURLs": [
     "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-authorization.html"
   ],
   "Remediation": {
     "Code": {
-      "CLI": "```bash\naws bedrock-agentcore-control update-agent-runtime --agent-runtime-id <runtime_id> --agent-runtime-artifact <existing_artifact> --role-arn <role_arn> --network-configuration <existing_network_configuration> --authorizer-configuration '{\"customJWTAuthorizer\":{\"discoveryUrl\":\"<discovery_url>\",\"allowedClients\":[\"<client_id>\"]}}'\n```",
+      "CLI": "aws bedrock-agentcore-control update-agent-runtime --agent-runtime-id <runtime_id> --agent-runtime-artifact <existing_artifact> --role-arn <role_arn> --network-configuration <existing_network_configuration> --authorizer-configuration '{\"customJWTAuthorizer\":{\"discoveryUrl\":\"<discovery_url>\",\"allowedClients\":[\"<client_id>\"]}}'",
       "NativeIaC": "```yaml\nResources:\n  example_resource:\n    Type: AWS::BedrockAgentCore::Runtime\n    Properties:\n      AgentRuntimeName: example_resource\n      AuthorizerConfiguration:\n        CustomJWTAuthorizer:\n          DiscoveryUrl: https://example.com/.well-known/openid-configuration  # Critical: requires an inbound authorizer\n```",
       "Other": "1. Open the AWS Console and go to Amazon Bedrock AgentCore\n2. Select **Agent Runtimes** from the navigation pane\n3. Edit the agent runtime\n4. Configure an inbound authorizer (custom JWT)\n5. Save the agent runtime",
       "Terraform": "```hcl\nresource \"aws_bedrockagentcore_agent_runtime\" \"example_resource\" {\n  agent_runtime_name = \"example_resource\"\n  role_arn           = aws_iam_role.example_resource.arn\n\n  agent_runtime_artifact {\n    container_configuration {\n      container_uri = \"123456789012.dkr.ecr.us-east-1.amazonaws.com/example:latest\"\n    }\n  }\n\n  network_configuration {\n    network_mode = \"VPC\"\n  }\n\n  # Critical: without this block the runtime accepts any caller holding IAM permissions\n  authorizer_configuration {\n    custom_jwt_authorizer {\n      discovery_url   = \"https://example.com/.well-known/openid-configuration\"\n      allowed_clients = [\"example-client-id\"]\n    }\n  }\n}\n```"
     },
     "Recommendation": {
-      "Text": "Configure every Bedrock AgentCore agent runtime with an inbound authorizer (custom JWT) so `InvokeAgentRuntime` calls are authenticated before the agent processes them.",
+      "Text": "Where an agent runtime is invoked on behalf of end users, configure a custom JWT inbound authorizer so `InvokeAgentRuntime` carries a validated end-user identity rather than only the calling IAM principal. A runtime supports one method at a time, so a runtime reached only by other AWS services may keep IAM SigV4 deliberately.",
       "Url": "https://hub.prowler.com/check/bedrockagentcore_runtime_inbound_authorizer_configured"
     }
   },
