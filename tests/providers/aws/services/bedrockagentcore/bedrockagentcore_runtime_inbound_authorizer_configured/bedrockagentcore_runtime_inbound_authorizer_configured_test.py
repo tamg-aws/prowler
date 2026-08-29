@@ -146,25 +146,54 @@ class Test_bedrockagentcore_runtime_inbound_authorizer_configured:
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_pass)
     @mock_aws
     def test_compliant(self):
-        """A compliant resource yields exactly one PASS."""
+        """A compliant resource yields exactly one PASS, with the full message pinned."""
         result = self._run()
         assert len(result) == 1
         assert result[0].status == "PASS"
         assert result[0].resource_id == RES_ID
         assert result[0].resource_arn == RES_ARN
         assert result[0].region == AWS_REGION_US_EAST_1
-        assert AWS_REGION_US_EAST_1 in result[0].status_extended
+        assert result[0].status_extended == (
+            f"Bedrock AgentCore agent runtime {RES_NAME} has an inbound authorizer configuration "
+            f"in region {AWS_REGION_US_EAST_1}."
+        )
 
     @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_fail)
     @mock_aws
     def test_non_compliant(self):
-        """A non-compliant resource yields exactly one FAIL."""
+        """A non-compliant resource yields exactly one FAIL, with the full message pinned.
+
+        The message is asserted in full rather than by substring because a wording change has no
+        predicate to flip, so nothing else can catch one. It must say the runtime falls back to IAM
+        SigV4 and carries no validated end-user identity -- NOT that it is unauthenticated, which is
+        what an earlier wording implied and which AWS documentation contradicts.
+        """
         result = self._run()
         assert len(result) == 1
         assert result[0].status == "FAIL"
         assert result[0].resource_id == RES_ID
         assert result[0].resource_arn == RES_ARN
         assert result[0].region == AWS_REGION_US_EAST_1
+        assert result[0].status_extended == (
+            f"Bedrock AgentCore agent runtime {RES_NAME} has no inbound authorizer configuration "
+            f"in region {AWS_REGION_US_EAST_1}, so inbound calls fall back to IAM SigV4 and carry "
+            f"no validated end-user identity."
+        )
+
+    @mock.patch("botocore.client.BaseClient._make_api_call", new=_mock_fail)
+    @mock_aws
+    def test_fail_does_not_claim_the_runtime_is_unauthenticated(self):
+        """The FAIL must not assert an unauthenticated endpoint.
+
+        A positive full-string assertion pins the new text; only this negative one stops the wider
+        claim returning if someone later shortens the message. SigV4 authenticates the calling AWS
+        principal, so "unauthenticated" and "no authorizer" without the fallback named are both
+        wider than the check establishes.
+        """
+        message = self._run()[0].status_extended
+        assert "unauthenticated" not in message
+        assert "has no inbound authorizer configured" not in message
+        assert "IAM SigV4" in message
 
     @mock.patch(
         "botocore.client.BaseClient._make_api_call", new=_mock_unsupported_region

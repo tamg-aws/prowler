@@ -8,7 +8,11 @@ class bedrockagentcore_runtime_inbound_authorizer_configured(Check):
     """Ensure Bedrock AgentCore agent runtimes require an inbound authorizer.
 
     - PASS: The AgentCore agent runtime has an authorizer configuration set.
-    - FAIL: The AgentCore agent runtime has no authorizer configuration.
+    - FAIL: The AgentCore agent runtime has no authorizer configuration, so inbound calls fall
+      back to IAM SigV4 and carry no validated end-user identity. This is NOT the same as
+      unauthenticated: SigV4 authenticates the calling AWS principal, and AWS documents it as the
+      default and as the recommended posture for service-to-service calls. The gap is that the
+      agent cannot scope its actions or tool access to the person it is acting for.
     - MANUAL: GetAgentRuntime failed, so the authorizer configuration could not
       be retrieved and an absent value cannot be read as "no authorizer".
     """
@@ -47,10 +51,14 @@ class bedrockagentcore_runtime_inbound_authorizer_configured(Check):
                 continue
 
             report.status = "PASS"
-            report.status_extended = f"Bedrock AgentCore agent runtime {runtime.name} has an inbound authorizer configured in region {runtime.region}."
+            report.status_extended = f"Bedrock AgentCore agent runtime {runtime.name} has an inbound authorizer configuration in region {runtime.region}."
             if not runtime.authorizer_configuration:
+                # "has no inbound authorizer configured" read as unauthenticated, which is false:
+                # with no authorizerConfiguration the runtime falls back to IAM SigV4, the AWS
+                # default and the recommended posture for service-to-service calls. What is
+                # missing is a validated end-user identity, so say that and nothing wider.
                 report.status = "FAIL"
-                report.status_extended = f"Bedrock AgentCore agent runtime {runtime.name} has no inbound authorizer configured in region {runtime.region}."
+                report.status_extended = f"Bedrock AgentCore agent runtime {runtime.name} has no inbound authorizer configuration in region {runtime.region}, so inbound calls fall back to IAM SigV4 and carry no validated end-user identity."
             findings.append(report)
 
         return findings
