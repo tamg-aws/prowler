@@ -24,6 +24,10 @@ orig = botocore.client.BaseClient._make_api_call
 
 FM_RG_NAME = "test-firewall-manager-rule-group"
 FM_RG_ARN = "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/test-firewall-manager-rule-group"
+DENIED_ACL_NAME = "test-get-web-acl-denied"
+DENIED_ACL_ARN = (
+    "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/test-get-web-acl-denied"
+)
 
 
 def _byte_match_rule(name: str, priority: int, action: dict) -> dict:
@@ -116,6 +120,31 @@ def mock_make_api_call(self, operation_name, kwarg):
                 "TagList": [{"Key": "Name", "Value": FM_RG_NAME}],
             }
         }
+    return orig(self, operation_name, kwarg)
+
+
+def mock_make_api_call_get_web_acl_denied(self, operation_name, kwarg):
+    """List one Web ACL and deny GetWebACL, so its rules are unknown rather than empty.
+
+    Mirrors the fixture of the same name in the sibling check's tests, so the two read as one
+    decision about the same state.
+    """
+    if operation_name == "ListWebACLs":
+        return {
+            "WebACLs": [
+                {"Name": DENIED_ACL_NAME, "Id": DENIED_ACL_NAME, "ARN": DENIED_ACL_ARN}
+            ]
+        }
+    if operation_name == "GetWebACL":
+        raise botocore.exceptions.ClientError(
+            {
+                "Error": {
+                    "Code": "AccessDeniedException",
+                    "Message": "User is not authorized to perform wafv2:GetWebACL",
+                }
+            },
+            operation_name,
+        )
     return orig(self, operation_name, kwarg)
 
 
@@ -393,6 +422,46 @@ class Test_wafv2_webacl_rules_not_count_only:
                 == f"AWS WAFv2 Web ACL {FM_RG_NAME} only counts matching requests, so no rule or rule group blocks them."
             )
             assert result[0].resource_arn == FM_RG_ARN
+
+    @patch(
+        "botocore.client.BaseClient._make_api_call",
+        new=mock_make_api_call_get_web_acl_denied,
+    )
+    @mock_aws
+    def test_unretrieved_rules_are_manual_not_skipped(self):
+        """A Web ACL whose GetWebACL failed must be MANUAL, not silently skipped.
+
+        An unread inventory presents as an empty rule list, which is indistinguishable from a Web ACL
+        that genuinely has no rules -- so the no-rules skip swallowed it and the Web ACL produced no
+        finding at all. That is why the MANUAL branch has to precede the skip rather than sit beside
+        the verdicts. `rules_retrieved`, added by this PR, is what makes the two states separable, and
+        the sibling `wafv2_webacl_anti_ddos_rule_group_attached` already reports this one MANUAL; the
+        wording matches so the two read as one decision rather than two.
+        """
+        from prowler.providers.aws.services.wafv2.wafv2_service import WAFv2
+
+        aws_provider = set_mocked_aws_provider([AWS_REGION_US_EAST_1])
+
+        with (
+            mock.patch(
+                "prowler.providers.common.provider.Provider.get_global_provider",
+                return_value=aws_provider,
+            ),
+            mock.patch(CHECK_PATH, new=WAFv2(aws_provider)),
+        ):
+            from prowler.providers.aws.services.wafv2.wafv2_webacl_rules_not_count_only.wafv2_webacl_rules_not_count_only import (
+                wafv2_webacl_rules_not_count_only,
+            )
+
+            result = wafv2_webacl_rules_not_count_only().execute()
+
+            assert len(result) == 1
+            assert result[0].status == "MANUAL"
+            assert result[0].status_extended == (
+                f"AWS WAFv2 Web ACL {DENIED_ACL_NAME} rules could not be retrieved, so whether "
+                "any rule or rule group can block matching requests cannot be determined."
+            )
+            assert result[0].resource_arn == DENIED_ACL_ARN
 
     @patch(
         "botocore.client.BaseClient._make_api_call", new=mock_make_api_call_list_denied
