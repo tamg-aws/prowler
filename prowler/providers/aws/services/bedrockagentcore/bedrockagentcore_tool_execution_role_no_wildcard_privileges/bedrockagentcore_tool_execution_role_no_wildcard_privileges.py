@@ -100,8 +100,8 @@ class bedrockagentcore_tool_execution_role_no_wildcard_privileges(Check):
             findings.append(report)
         if iam_client.roles is None:
             # ListRoles was denied, so the IAM inventory is unknown rather than empty. Treating it
-            # as empty would resolve every execution role to None below. The two sibling checks in
-            # this PR guard the same way.
+            # as empty would resolve every execution role to None below. This is the only check in
+            # this PR that reads iam_client, so there is no sibling to be consistent with.
             report = Check_Report_AWS(metadata=self.metadata(), resource={})
             report.region = iam_client.region
             report.resource_id = iam_client.audited_account
@@ -160,8 +160,7 @@ class bedrockagentcore_tool_execution_role_no_wildcard_privileges(Check):
                 # Match on the suffix, not an "arn:aws:" prefix: AWS-managed policy ARNs are
                 # arn:aws-us-gov: and arn:aws-cn: in the other partitions, and the fall-through
                 # below only tests SENSITIVE_SERVICES, so a *FullAccess policy for a service
-                # outside that list would PASS there. bedrockagentcore_full_access_policy_attached
-                # in this same PR matches by suffix for the same reason.
+                # outside that list would PASS there.
                 if ":iam::aws:policy/" in policy_arn and policy_arn.endswith(
                     "FullAccess"
                 ):
